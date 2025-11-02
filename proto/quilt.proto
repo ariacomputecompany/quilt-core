@@ -14,6 +14,8 @@ service QuiltService {
     rpc StopContainer (StopContainerRequest) returns (StopContainerResponse);
     // Removes a container
     rpc RemoveContainer (RemoveContainerRequest) returns (RemoveContainerResponse);
+    // Lists all containers
+    rpc ListContainers (ListContainersRequest) returns (ListContainersResponse);
     // Executes a command in a running container
     rpc ExecContainer (ExecContainerRequest) returns (ExecContainerResponse);
     // Executes an interactive command with bidirectional streaming
@@ -183,6 +185,27 @@ message RemoveContainerRequest {
 message RemoveContainerResponse {
     bool success = 1;                             // Whether removal was successful
     string error_message = 2;                     // Error message if removal failed
+}
+
+message ListContainersRequest {
+    optional string state_filter = 1;             // Optional filter by state (running, exited, etc.)
+}
+
+message ListContainersResponse {
+    repeated ContainerInfo containers = 1;        // List of containers
+}
+
+message ContainerInfo {
+    string container_id = 1;                      // Container ID
+    string name = 2;                              // Container name (may be empty)
+    ContainerStatus status = 3;                   // Current container status
+    int32 pid = 4;                               // Process ID (0 if not running)
+    int32 exit_code = 5;                         // Exit code (if exited)
+    uint64 created_at = 6;                       // Creation timestamp
+    uint64 started_at = 7;                       // Container start timestamp (0 if never started)
+    uint64 exited_at = 8;                        // Container exit timestamp (0 if still running)
+    string rootfs_path = 9;                      // Container rootfs path
+    string ip_address = 10;                      // Container IP address (may be empty)
 }
 
 message ExecContainerRequest {

@@ -137,6 +137,21 @@ enum Commands {
         force: bool,
     },
 
+    /// List all containers
+    List {
+        /// Filter by state (running, exited, created, error)
+        #[clap(long)]
+        state: Option<String>,
+
+        /// Display as table with full information
+        #[clap(long)]
+        table: bool,
+
+        /// Output as JSON
+        #[clap(long)]
+        json: bool,
+    },
+
     /// Start a stopped container
     Start {
         /// Container ID or name
@@ -511,6 +526,10 @@ async fn handle_client_command(cli: QuiltCli) -> Result<(), Box<dyn std::error::
 
         Commands::Remove { container, force } => {
             cli::commands::handle_remove(&mut client, container, false, force).await
+        }
+
+        Commands::List { state, table, json } => {
+            cli::commands::handle_list(&mut client, state, table, json).await
         }
 
         Commands::Start { container } => {

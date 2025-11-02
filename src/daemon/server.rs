@@ -34,6 +34,7 @@ use quilt::{
     GetContainerLogsRequest, GetContainerLogsResponse,
     StopContainerRequest, StopContainerResponse,
     RemoveContainerRequest, RemoveContainerResponse,
+    ListContainersRequest, ListContainersResponse,
     ExecContainerRequest, ExecContainerResponse,
     StartContainerRequest, StartContainerResponse,
     KillContainerRequest, KillContainerResponse,
@@ -671,6 +672,68 @@ impl QuiltService for QuiltServiceImpl {
                     success: false,
                     error_message: e.to_string(),
                 }))
+            }
+        }
+    }
+
+    async fn list_containers(
+        &self,
+        request: Request<ListContainersRequest>,
+    ) -> Result<Response<ListContainersResponse>, Status> {
+        let req = request.into_inner();
+
+        // Parse state filter if provided
+        let state_filter = if let Some(state_str) = req.state_filter {
+            if !state_str.is_empty() {
+                match ContainerState::from_string(&state_str) {
+                    Ok(state) => Some(state),
+                    Err(_) => return Err(Status::invalid_argument(
+                        format!("Invalid state filter: {}", state_str)
+                    )),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Get containers from sync engine
+        match self.sync_engine.list_containers(state_filter).await {
+            Ok(containers) => {
+                let mut proto_containers = Vec::new();
+
+                for container in containers {
+                    // Convert ContainerState to proto ContainerStatus
+                    let proto_status = match container.state {
+                        ContainerState::Created => ContainerStatus::Pending,
+                        ContainerState::Starting => ContainerStatus::Pending,
+                        ContainerState::Running => ContainerStatus::Running,
+                        ContainerState::Exited => ContainerStatus::Exited,
+                        ContainerState::Error => ContainerStatus::Failed,
+                    };
+
+                    proto_containers.push(quilt::ContainerInfo {
+                        container_id: container.id,
+                        name: container.name.unwrap_or_default(),
+                        status: proto_status as i32,
+                        pid: container.pid.unwrap_or(0) as i32,
+                        exit_code: container.exit_code.unwrap_or(0) as i32,
+                        created_at: container.created_at as u64,
+                        started_at: container.started_at.unwrap_or(0) as u64,
+                        exited_at: container.exited_at.unwrap_or(0) as u64,
+                        rootfs_path: container.rootfs_path.unwrap_or_default(),
+                        ip_address: container.ip_address.unwrap_or_default(),
+                    });
+                }
+
+                Ok(Response::new(ListContainersResponse {
+                    containers: proto_containers,
+                }))
+            }
+            Err(e) => {
+                ConsoleLogger::error(&format!("Failed to list containers: {}", e));
+                Err(Status::internal(format!("Failed to list containers: {}", e)))
             }
         }
     }

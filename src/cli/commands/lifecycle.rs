@@ -8,6 +8,7 @@ use crate::quilt::{
     StopContainerRequest, StopContainerResponse,
     KillContainerRequest, KillContainerResponse,
     RemoveContainerRequest, RemoveContainerResponse,
+    ListContainersRequest, ListContainersResponse,
 };
 use crate::utils::logger::Logger;
 use super::common::{resolve_container_id, format_timestamp, format_bytes};
@@ -240,6 +241,105 @@ pub async fn handle_remove(
         }
         Err(e) => {
             Logger::error(&format!("Failed to remove container: {}", e));
+            Err(e.into())
+        }
+    }
+}
+
+/// List all containers with optional filtering and formatting
+pub async fn handle_list(
+    client: &mut QuiltServiceClient<Channel>,
+    state: Option<String>,
+    table: bool,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let request = tonic::Request::new(ListContainersRequest {
+        state_filter: state,
+    });
+
+    match client.list_containers(request).await {
+        Ok(response) => {
+            let res: ListContainersResponse = response.into_inner();
+
+            if res.containers.is_empty() {
+                Logger::info("No containers found");
+                return Ok(());
+            }
+
+            if json {
+                // JSON output - manual formatting since proto types don't derive Serialize
+                println!("[");
+                for (i, c) in res.containers.iter().enumerate() {
+                    let status_str = match c.status {
+                        0 => "PENDING",
+                        1 => "RUNNING",
+                        2 => "EXITED",
+                        3 => "FAILED",
+                        _ => "UNKNOWN",
+                    };
+                    println!("  {{");
+                    println!("    \"container_id\": \"{}\",", c.container_id);
+                    println!("    \"name\": \"{}\",", c.name);
+                    println!("    \"status\": \"{}\",", status_str);
+                    println!("    \"pid\": {},", c.pid);
+                    println!("    \"exit_code\": {},", c.exit_code);
+                    println!("    \"ip_address\": \"{}\"", c.ip_address);
+                    if i < res.containers.len() - 1 {
+                        println!("  }},");
+                    } else {
+                        println!("  }}");
+                    }
+                }
+                println!("]");
+            } else if table {
+                // Table format with full information
+                println!("{:<12} {:<20} {:<10} {:<8} {:<15}", "ID", "NAME", "STATUS", "PID", "IP");
+                println!("{}", "-".repeat(75));
+
+                for container in res.containers {
+                    let status_str = match container.status {
+                        0 => "PENDING",
+                        1 => "RUNNING",
+                        2 => "EXITED",
+                        3 => "FAILED",
+                        _ => "UNKNOWN",
+                    };
+                    let short_id = &container.container_id[..12.min(container.container_id.len())];
+                    let name_display = if container.name.is_empty() {
+                        "-"
+                    } else {
+                        &container.name
+                    };
+                    let pid_display = if container.pid == 0 {
+                        "-".to_string()
+                    } else {
+                        container.pid.to_string()
+                    };
+                    let ip_display = if container.ip_address.is_empty() {
+                        "-"
+                    } else {
+                        &container.ip_address
+                    };
+
+                    println!("{:<12} {:<20} {:<10} {:<8} {:<15}",
+                        short_id, name_display, status_str, pid_display, ip_display);
+                }
+            } else {
+                // Simple format: name (id)
+                for container in res.containers {
+                    let short_id = &container.container_id[..12.min(container.container_id.len())];
+                    if container.name.is_empty() {
+                        println!("{}", short_id);
+                    } else {
+                        println!("{} ({})", container.name, short_id);
+                    }
+                }
+            }
+
+            Ok(())
+        }
+        Err(e) => {
+            Logger::error(&format!("Failed to list containers: {}", e));
             Err(e.into())
         }
     }

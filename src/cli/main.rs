@@ -23,7 +23,7 @@ mod utils;
 
 use quilt::quilt_service_client::QuiltServiceClient;
 use quilt::{
-    CreateContainerRequest, CreateContainerResponse, 
+    CreateContainerRequest, CreateContainerResponse,
     GetContainerStatusRequest, GetContainerStatusResponse,
     GetContainerLogsRequest, GetContainerLogsResponse,
     StopContainerRequest, StopContainerResponse,
@@ -147,7 +147,7 @@ enum Commands {
     },
     
     /// Remove a container
-    Remove { 
+    Remove {
         #[clap(help = "ID or name of the container to remove")]
         container: String,
         #[clap(short = 'n', long, help = "Treat input as container name")]
@@ -155,7 +155,7 @@ enum Commands {
         #[clap(long, short = 'f', help = "Force removal even if running")]
         force: bool,
     },
-    
+
     /// Create a production-ready persistent container
     #[clap(name = "create-production")]
     CreateProduction {
@@ -919,7 +919,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        
+
         Commands::CreateProduction { image_path, name, setup, env, memory, cpu, no_network } => {
             let container_name = name.clone();
             println!("🚀 Creating production container using the new event-driven readiness system...");

@@ -9,7 +9,7 @@ pub mod exec;
 pub mod volume;
 
 // Re-export main command handlers for convenience
-pub use lifecycle::{handle_status, handle_start, handle_stop, handle_kill, handle_remove};
+pub use lifecycle::{handle_status, handle_start, handle_stop, handle_kill, handle_remove, handle_list};
 pub use logs::handle_logs;
 pub use create::handle_create;
 pub use exec::handle_exec; // handle_shell is deprecated - use cli::shell::InteractiveShell
