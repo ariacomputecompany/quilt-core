@@ -36,19 +36,43 @@ fi
 echo "      ✓ Build successful"
 echo ""
 
-# 1. Stop daemon if running (to avoid "Text file busy" error)
-echo "   🛑 Stopping daemon if running..."
-if pgrep -f "quilt daemon" > /dev/null 2>&1; then
-    pkill -f "quilt daemon" 2>/dev/null || true
+# 1. Stop ALL quilt binaries and daemons (to avoid "Text file busy" error)
+echo "   🛑 Stopping all quilt processes..."
+
+# Kill only actual quilt binaries/daemons, not this install script
+# Use -x for exact binary name match
+killall -9 quilt 2>/dev/null || true
+# Kill daemon processes specifically
+pkill -9 -f "/quilt daemon" 2>/dev/null || true
+pkill -9 -f "target/debug/quilt daemon" 2>/dev/null || true
+pkill -9 -f "target/release/quilt daemon" 2>/dev/null || true
+pkill -9 -f "usr/local/bin/quilt daemon" 2>/dev/null || true
+
+# Wait for processes to die
+sleep 1
+
+# Verify all quilt daemon/binary processes are dead (exclude this install script)
+if pgrep -f "quilt daemon" > /dev/null 2>&1 || pgrep -x quilt > /dev/null 2>&1; then
+    echo "      ⚠ Some quilt processes still running, force killing..."
+    # Nuclear option - kill by PID directly (only actual quilt binaries, not scripts)
+    for pid in $(pgrep -f "quilt daemon"); do
+        kill -9 "$pid" 2>/dev/null || true
+    done
+    for pid in $(pgrep -x quilt); do
+        kill -9 "$pid" 2>/dev/null || true
+    done
     sleep 1
-    # Force kill if still running
-    if pgrep -f "quilt daemon" > /dev/null 2>&1; then
-        pkill -9 -f "quilt daemon" 2>/dev/null || true
-        sleep 0.5
-    fi
-    echo "      ✓ Daemon stopped"
+fi
+
+# Final verification (only check for actual quilt binaries, not this script)
+REMAINING=$(pgrep -f "quilt daemon" 2>/dev/null || pgrep -x quilt 2>/dev/null || true)
+if [ -n "$REMAINING" ]; then
+    echo "      ❌ WARNING: Could not kill all quilt processes"
+    echo "         Please manually kill these processes and try again:"
+    ps -p "$REMAINING" -o pid,cmd
+    exit 1
 else
-    echo "      ✓ No daemon running"
+    echo "      ✓ All quilt processes stopped"
 fi
 echo ""
 

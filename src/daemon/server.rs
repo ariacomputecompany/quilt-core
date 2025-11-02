@@ -1025,8 +1025,12 @@ impl QuiltService for QuiltServiceImpl {
             }
         };
 
+        // Extract raw fds before forgetting the PtyPair
+        let master_fd = pty.master;
+        let slave_fd = pty.slave;
+
         // Make PTY master non-blocking
-        if let Err(e) = pty::make_pty_nonblocking(pty.master) {
+        if let Err(e) = pty::make_pty_nonblocking(master_fd) {
             let (tx, rx) = mpsc::channel(1);
             let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
                 message: Some(quilt::exec_interactive_response::Message::Error(
@@ -1036,37 +1040,144 @@ impl QuiltService for QuiltServiceImpl {
             return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
         }
 
-        // Build command
+        // Set CLOEXEC on master_fd to prevent it from being inherited by child processes
+        // This is CRITICAL - if the child inherits the master FD, it will intercept PTY data
+        use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+        if let Err(e) = fcntl(master_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)) {
+            eprintln!("❌ [SHELL-SPAWN] Failed to set CLOEXEC on master_fd: {}", e);
+            let (tx, rx) = mpsc::channel(1);
+            let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
+                message: Some(quilt::exec_interactive_response::Message::Error(
+                    format!("Failed to set CLOEXEC on PTY master: {}", e)
+                )),
+            })).await;
+            return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
+        }
+        eprintln!("🔍 [SHELL-SPAWN] Set CLOEXEC on master_fd to prevent inheritance");
+
+        // Prevent PtyPair Drop from closing the fds - we manage them manually now
+        std::mem::forget(pty);
+
+        // Build command - ensure shell is interactive with -i flag
         let command = if start_request.command.is_empty() {
-            vec!["/bin/sh".to_string()]
+            // Default: interactive sh
+            vec!["/bin/sh".to_string(), "-i".to_string()]
+        } else if start_request.command == vec!["/bin/sh"] {
+            // Explicit sh without flags: make it interactive
+            vec!["/bin/sh".to_string(), "-i".to_string()]
+        } else if start_request.command == vec!["/bin/bash"] {
+            // Explicit bash without flags: make it interactive
+            vec!["/bin/bash".to_string(), "-i".to_string()]
         } else {
+            // User specified flags or different command: use as-is
             start_request.command
         };
 
         let rootfs_path = format!("/tmp/quilt-containers/{}", container_id);
         let command_str = command.join(" ");
 
+        // Build custom prompt: "name (short-id)" or just "short-id" if no name
+        let short_id = &container_id[..std::cmp::min(12, container_id.len())];
+        let prompt = if let Some(ref name) = status.name {
+            format!("{} ({})", name, short_id)
+        } else {
+            short_id.to_string()
+        };
+
         // Fork nsenter with PTY
         use std::process::{Command, Stdio};
         use std::os::unix::io::FromRawFd;
 
+        eprintln!("🔍 [SHELL-SPAWN] Spawning interactive shell in container");
+        eprintln!("🔍 [SHELL-SPAWN] Container ID: {}", container_id);
+        eprintln!("🔍 [SHELL-SPAWN] PID: {}", pid);
+        eprintln!("🔍 [SHELL-SPAWN] Command: {:?}", command);
+        eprintln!("🔍 [SHELL-SPAWN] Rootfs: {}", rootfs_path);
+
+        // Duplicate slave_fd for each stdio stream to avoid triple-ownership bug
+        // Each Stdio::from_raw_fd takes ownership, so we need separate FDs
+        let slave_fd_stdin = match nix::unistd::dup(slave_fd) {
+            Ok(fd) => fd,
+            Err(e) => {
+                eprintln!("❌ [SHELL-SPAWN] Failed to dup slave_fd for stdin: {}", e);
+                let (tx, rx) = mpsc::channel(1);
+                let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
+                    message: Some(quilt::exec_interactive_response::Message::Error(
+                        format!("Failed to duplicate PTY slave fd: {}", e)
+                    )),
+                })).await;
+                nix::unistd::close(slave_fd).ok();
+                return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
+            }
+        };
+
+        let slave_fd_stdout = match nix::unistd::dup(slave_fd) {
+            Ok(fd) => fd,
+            Err(e) => {
+                eprintln!("❌ [SHELL-SPAWN] Failed to dup slave_fd for stdout: {}", e);
+                nix::unistd::close(slave_fd_stdin).ok();
+                nix::unistd::close(slave_fd).ok();
+                let (tx, rx) = mpsc::channel(1);
+                let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
+                    message: Some(quilt::exec_interactive_response::Message::Error(
+                        format!("Failed to duplicate PTY slave fd: {}", e)
+                    )),
+                })).await;
+                return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
+            }
+        };
+
+        let slave_fd_stderr = match nix::unistd::dup(slave_fd) {
+            Ok(fd) => fd,
+            Err(e) => {
+                eprintln!("❌ [SHELL-SPAWN] Failed to dup slave_fd for stderr: {}", e);
+                nix::unistd::close(slave_fd_stdin).ok();
+                nix::unistd::close(slave_fd_stdout).ok();
+                nix::unistd::close(slave_fd).ok();
+                let (tx, rx) = mpsc::channel(1);
+                let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
+                    message: Some(quilt::exec_interactive_response::Message::Error(
+                        format!("Failed to duplicate PTY slave fd: {}", e)
+                    )),
+                })).await;
+                return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
+            }
+        };
+
+        // Close the original slave_fd since we've duplicated it
+        nix::unistd::close(slave_fd).ok();
+
+        // Execute shell with proper environment setup
+        // Use setsid to make the shell process a session leader with PTY as controlling terminal
+        let shell_setup_cmd = format!(
+            "export PATH=/bin:/usr/bin:/sbin:/usr/sbin:$PATH; export PS1='[{}]$ '; exec {}",
+            prompt, command_str
+        );
+
+        eprintln!("🔍 [SHELL-SPAWN] Full command: setsid nsenter -t {} -p -m -n -u -- chroot {} sh -c \"{}\"", pid, rootfs_path, shell_setup_cmd);
+
         let child = match unsafe {
-            Command::new("nsenter")
+            Command::new("setsid")
                 .args(&[
+                    "nsenter",
                     "-t", &pid.to_string(),
                     "-p", "-m", "-n", "-u",
                     "--",
                     "chroot", &rootfs_path,
-                    "/bin/sh", "-c",
-                    &format!("export PATH=/bin:/usr/bin:/sbin:/usr/sbin:$PATH; {}", command_str),
+                    "sh", "-c",
+                    &shell_setup_cmd,
                 ])
-                .stdin(Stdio::from_raw_fd(pty.slave))
-                .stdout(Stdio::from_raw_fd(pty.slave))
-                .stderr(Stdio::from_raw_fd(pty.slave))
+                .stdin(Stdio::from_raw_fd(slave_fd_stdin))
+                .stdout(Stdio::from_raw_fd(slave_fd_stdout))
+                .stderr(Stdio::from_raw_fd(slave_fd_stderr))
                 .spawn()
         } {
-            Ok(c) => c,
+            Ok(c) => {
+                eprintln!("🔍 [SHELL-SPAWN] Process spawned successfully, PID: {}", c.id());
+                c
+            },
             Err(e) => {
+                eprintln!("❌ [SHELL-SPAWN] Failed to spawn process: {}", e);
                 let (tx, rx) = mpsc::channel(1);
                 let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
                     message: Some(quilt::exec_interactive_response::Message::Error(
@@ -1077,65 +1188,128 @@ impl QuiltService for QuiltServiceImpl {
             }
         };
 
-        // Close slave in parent
-        nix::unistd::close(pty.slave).ok();
+        // Note: slave_fd_* ownership transferred to Child via Stdio::from_raw_fd
+        // The Child process will close them when it exits
 
         let child_pid = child.id();
-        let master_fd = pty.master;
 
-        // Prevent PtyPair Drop from closing master_fd - we'll manage it manually in async tasks
-        std::mem::forget(pty);
+        // Duplicate the master fd for the writer task (can't have two AsyncFd on same fd)
+        let master_fd_write = match nix::unistd::dup(master_fd) {
+            Ok(fd) => fd,
+            Err(e) => {
+                let (tx, rx) = mpsc::channel(1);
+                let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
+                    message: Some(quilt::exec_interactive_response::Message::Error(
+                        format!("Failed to duplicate fd: {}", e)
+                    )),
+                })).await;
+                nix::unistd::close(master_fd).ok();
+                return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
+            }
+        };
+
+        // Convert raw fds to OwnedFd for proper ownership semantics
+        use std::os::unix::io::OwnedFd;
+        let master_fd_owned = unsafe { OwnedFd::from_raw_fd(master_fd) };
+        let master_fd_write_owned = unsafe { OwnedFd::from_raw_fd(master_fd_write) };
 
         // Create channel for output stream
         let (tx, rx) = mpsc::channel::<Result<quilt::ExecInteractiveResponse, Status>>(32);
 
+        // Create coordination primitive for PTY reader -> exit waiter signaling
+        let pty_reader_done = std::sync::Arc::new(tokio::sync::Notify::new());
+
         // Spawn task to read from PTY and send to client
         let tx_output = tx.clone();
+        let pty_reader_done_clone = pty_reader_done.clone();
         tokio::spawn(async move {
             use tokio::io::unix::AsyncFd;
 
-            let async_fd = match AsyncFd::new(master_fd) {
-                Ok(fd) => fd,
-                Err(_) => return,
+            eprintln!("🔍 [PTY-READER] Task started, creating AsyncFd for master PTY");
+
+            let async_fd = match AsyncFd::new(master_fd_owned) {
+                Ok(fd) => {
+                    eprintln!("🔍 [PTY-READER] AsyncFd created successfully");
+                    fd
+                },
+                Err(e) => {
+                    eprintln!("❌ [PTY-READER] Failed to create AsyncFd: {}", e);
+                    let _ = tx_output.send(Ok(quilt::ExecInteractiveResponse {
+                        message: Some(quilt::exec_interactive_response::Message::StderrData(
+                            format!("Failed to setup PTY async IO: {}\n", e).into_bytes()
+                        )),
+                    })).await;
+                    return;
+                },
             };
 
             let mut buffer = vec![0u8; 8192];
+            eprintln!("🔍 [PTY-READER] Entering read loop");
 
             loop {
                 let mut guard = match async_fd.readable().await {
                     Ok(g) => g,
-                    Err(_) => break,
+                    Err(e) => {
+                        eprintln!("❌ [PTY-READER] Failed to wait for readable: {}", e);
+                        break;
+                    },
                 };
 
                 match guard.try_io(|inner| {
+                    use std::os::unix::io::AsRawFd;
                     let fd = inner.get_ref();
-                    nix::unistd::read(*fd, &mut buffer)
+                    nix::unistd::read(fd.as_raw_fd(), &mut buffer)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
                 }) {
                     Ok(Ok(n)) if n > 0 => {
+                        eprintln!("🔍 [PTY-READER] Read {} bytes from PTY", n);
                         let data = buffer[..n].to_vec();
                         if tx_output.send(Ok(quilt::ExecInteractiveResponse {
                             message: Some(quilt::exec_interactive_response::Message::StdoutData(data)),
                         })).await.is_err() {
+                            eprintln!("❌ [PTY-READER] Client disconnected, stopping reader");
                             break;
                         }
                         guard.clear_ready();
                     }
-                    Ok(Ok(_)) => break, // EOF
-                    Ok(Err(_)) => break,
-                    Err(_would_block) => continue,
+                    Ok(Ok(_)) => {
+                        eprintln!("🔍 [PTY-READER] EOF reached, stopping reader");
+                        break;
+                    },
+                    Ok(Err(e)) => {
+                        eprintln!("❌ [PTY-READER] Read error: {}", e);
+                        break;
+                    },
+                    Err(_would_block) => {
+                        eprintln!("🔍 [PTY-READER] Would block, retrying");
+                        continue;
+                    },
                 }
             }
+            eprintln!("🔍 [PTY-READER] Task exiting, notifying exit waiter");
+            // Signal exit waiter that PTY reader has finished draining all data
+            pty_reader_done_clone.notify_one();
         });
 
         // Spawn task to receive from client and write to PTY
+        let child_pid_for_writer = child_pid; // Clone PID for writer task to use for termination
         tokio::spawn(async move {
             use tokio::io::unix::AsyncFd;
 
-            let async_fd = match AsyncFd::new(master_fd) {
-                Ok(fd) => fd,
-                Err(_) => return,
+            eprintln!("🔍 [PTY-WRITER] Task started, creating AsyncFd for master PTY");
+
+            let async_fd = match AsyncFd::new(master_fd_write_owned) {
+                Ok(fd) => {
+                    eprintln!("🔍 [PTY-WRITER] AsyncFd created successfully");
+                    fd
+                },
+                Err(e) => {
+                    eprintln!("❌ [PTY-WRITER] Failed to create AsyncFd: {}", e);
+                    return;
+                },
             };
+
+            eprintln!("🔍 [PTY-WRITER] Entering write loop, waiting for client data");
 
             while let Some(result) = in_stream.next().await {
                 match result {
@@ -1143,50 +1317,111 @@ impl QuiltService for QuiltServiceImpl {
                         if let Some(message) = req.message {
                             match message {
                                 quilt::exec_interactive_request::Message::StdinData(data) => {
+                                    eprintln!("🔍 [PTY-WRITER] Received {} bytes from client", data.len());
                                     let mut guard = match async_fd.writable().await {
                                         Ok(g) => g,
-                                        Err(_) => break,
+                                        Err(e) => {
+                                            eprintln!("❌ [PTY-WRITER] Failed to wait for writable: {}", e);
+                                            break;
+                                        },
                                     };
 
                                     match guard.try_io(|inner| {
+                                        use std::os::unix::io::AsRawFd;
                                         let fd = inner.get_ref();
-                                        nix::unistd::write(*fd, &data)
+                                        nix::unistd::write(fd.as_raw_fd(), &data)
                                             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
                                     }) {
-                                        Ok(Ok(_)) => {
+                                        Ok(Ok(n)) => {
+                                            eprintln!("🔍 [PTY-WRITER] Wrote {} bytes to PTY", n);
                                             guard.clear_ready();
                                         }
-                                        _ => break,
+                                        Ok(Err(e)) => {
+                                            eprintln!("❌ [PTY-WRITER] Write error: {}", e);
+                                            break;
+                                        }
+                                        Err(_would_block) => {
+                                            eprintln!("🔍 [PTY-WRITER] Would block on write");
+                                        }
                                     }
                                 }
                                 quilt::exec_interactive_request::Message::Resize(resize) => {
-                                    let _ = pty::resize_pty(master_fd, resize.rows as u16, resize.cols as u16);
+                                    eprintln!("🔍 [PTY-WRITER] Resizing PTY to {}x{}", resize.rows, resize.cols);
+                                    use std::os::unix::io::AsRawFd;
+                                    if let Err(e) = pty::resize_pty(async_fd.get_ref().as_raw_fd(), resize.rows as u16, resize.cols as u16) {
+                                        eprintln!("❌ [PTY-WRITER] Failed to resize PTY: {}", e);
+                                    }
                                 }
-                                _ => {}
+                                _ => {
+                                    eprintln!("🔍 [PTY-WRITER] Received unknown message type");
+                                }
                             }
                         }
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        eprintln!("❌ [PTY-WRITER] Stream error: {}", e);
+                        break;
+                    },
                 }
+            }
+            eprintln!("🔍 [PTY-WRITER] Task exiting");
+
+            // Client disconnected - immediately terminate the shell process
+            eprintln!("🔍 [PTY-WRITER] Client disconnected, terminating shell process with SIGKILL");
+            use nix::sys::signal::{kill, Signal};
+            use nix::unistd::Pid;
+            if let Err(e) = kill(Pid::from_raw(child_pid_for_writer as i32), Signal::SIGKILL) {
+                eprintln!("❌ [PTY-WRITER] Failed to send SIGKILL to process {}: {}", child_pid_for_writer, e);
+            } else {
+                eprintln!("🔍 [PTY-WRITER] SIGKILL sent successfully to process {}", child_pid_for_writer);
             }
         });
 
         // Spawn task to wait for process exit
         tokio::spawn(async move {
-            use nix::sys::wait::{waitpid, WaitStatus};
+            use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
             use nix::unistd::Pid;
 
-            // Wait for child process
-            let exit_code = match waitpid(Pid::from_raw(child_pid as i32), None) {
-                Ok(WaitStatus::Exited(_, code)) => code,
-                Ok(WaitStatus::Signaled(_, _, _)) => -1,
-                _ => -1,
+            eprintln!("🔍 [EXIT-WAITER] Task started, waiting for process exit");
+
+            // Step 1: Wait for child process exit (non-blocking, async-friendly)
+            let exit_code = loop {
+                match waitpid(Pid::from_raw(child_pid as i32), Some(WaitPidFlag::WNOHANG)) {
+                    Ok(WaitStatus::StillAlive) => {
+                        // Process still running, yield to runtime and check again
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                    Ok(WaitStatus::Exited(_, code)) => {
+                        eprintln!("🔍 [EXIT-WAITER] Process exited with code {}", code);
+                        break code;
+                    }
+                    Ok(WaitStatus::Signaled(_, signal, _)) => {
+                        eprintln!("🔍 [EXIT-WAITER] Process killed by signal {}", signal);
+                        break -1;
+                    }
+                    Ok(_) => {
+                        eprintln!("🔍 [EXIT-WAITER] Process terminated (other status)");
+                        break -1;
+                    }
+                    Err(e) => {
+                        eprintln!("❌ [EXIT-WAITER] waitpid error: {}", e);
+                        break -1;
+                    }
+                }
             };
 
-            // Send exit code
+            // Step 2: Wait for PTY reader to finish draining all buffered data
+            eprintln!("🔍 [EXIT-WAITER] Process exited, waiting for PTY reader to finish draining data");
+            pty_reader_done.notified().await;
+            eprintln!("🔍 [EXIT-WAITER] PTY reader confirmed done, sending exit code");
+
+            // Step 3: NOW send exit code - guaranteed to be AFTER all output
             let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
                 message: Some(quilt::exec_interactive_response::Message::ExitCode(exit_code)),
             })).await;
+
+            eprintln!("🔍 [EXIT-WAITER] Task exiting");
         });
 
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
