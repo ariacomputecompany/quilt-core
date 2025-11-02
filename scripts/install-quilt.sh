@@ -24,20 +24,40 @@ echo ""
 echo "📦 Installing for user: $ACTUAL_USER"
 echo ""
 
-# Check if release binary exists
-if [ ! -f "./target/release/quilt" ]; then
-    echo "❌ Release binary not found!"
-    echo "   Please build it first: cargo build --release"
+# Build the latest release binary
+echo "   🔨 Building latest release binary..."
+if ! sudo -u "$ACTUAL_USER" bash -c "source $ACTUAL_HOME/.cargo/env && cargo build --release"; then
+    echo ""
+    echo "❌ Build failed!"
+    echo "   Please fix any compilation errors and try again"
     echo ""
     exit 1
 fi
+echo "      ✓ Build successful"
+echo ""
 
-# 1. Install binary to system location
+# 1. Stop daemon if running (to avoid "Text file busy" error)
+echo "   🛑 Stopping daemon if running..."
+if pgrep -f "quilt daemon" > /dev/null 2>&1; then
+    pkill -f "quilt daemon" 2>/dev/null || true
+    sleep 1
+    # Force kill if still running
+    if pgrep -f "quilt daemon" > /dev/null 2>&1; then
+        pkill -9 -f "quilt daemon" 2>/dev/null || true
+        sleep 0.5
+    fi
+    echo "      ✓ Daemon stopped"
+else
+    echo "      ✓ No daemon running"
+fi
+echo ""
+
+# 2. Install binary to system location
 echo "   📥 Installing binary to /usr/local/bin..."
 cp ./target/release/quilt /usr/local/bin/quilt
 chmod 755 /usr/local/bin/quilt
 
-# 2. Create system directories with proper permissions
+# 3. Create system directories with proper permissions
 echo "   📁 Creating system directories..."
 mkdir -p /var/run/quilt
 mkdir -p /var/lib/quilt/volumes
@@ -115,7 +135,7 @@ else
     echo "      ✓ Default image already exists"
 fi
 
-# 3. Configure passwordless sudo for daemon operations
+# 4. Configure passwordless sudo for daemon operations
 echo "   🔐 Configuring passwordless daemon operations..."
 cat > /etc/sudoers.d/quilt << 'EOF'
 # Quilt Container Runtime - passwordless daemon management
@@ -137,7 +157,7 @@ if ! visudo -c -f /etc/sudoers.d/quilt >/dev/null 2>&1; then
     exit 1
 fi
 
-# 4. Clean up any old PID files
+# 5. Clean up any old PID files
 echo "   🧹 Cleaning up old state..."
 rm -f /var/run/quilt/quilt.pid 2>/dev/null || true
 rm -f $ACTUAL_HOME/.quilt/quilt.pid 2>/dev/null || true

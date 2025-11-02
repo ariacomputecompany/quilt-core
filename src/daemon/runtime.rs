@@ -1518,11 +1518,18 @@ done
     }
 
     pub fn get_container_info(&self, container_id: &str) -> Option<Container> {
-        if let Ok(containers) = self.containers.try_lock() {
-            containers.get(container_id).cloned()
-        } else {
-            None
+        // Retry logic to handle lock contention
+        for attempt in 0..10 {
+            if let Ok(containers) = self.containers.try_lock() {
+                return containers.get(container_id).cloned();
+            }
+            if attempt < 9 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
+        // Only return None after all retries exhausted
+        ConsoleLogger::error(&format!("Failed to get container info for {} after 10 attempts", container_id));
+        None
     }
 
     // Internal method for getting container stats

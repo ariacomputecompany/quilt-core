@@ -1083,6 +1083,9 @@ impl QuiltService for QuiltServiceImpl {
         let child_pid = child.id();
         let master_fd = pty.master;
 
+        // Prevent PtyPair Drop from closing master_fd - we'll manage it manually in async tasks
+        std::mem::forget(pty);
+
         // Create channel for output stream
         let (tx, rx) = mpsc::channel::<Result<quilt::ExecInteractiveResponse, Status>>(32);
 
@@ -2336,10 +2339,18 @@ impl QuiltService for QuiltServiceImpl {
 /// This is the main entry point for daemon mode
 pub async fn run_server(_detach: bool) -> Result<(), Box<dyn std::error::Error>> {
     use crate::utils::server_manager;
-    
+
     // Write PID file for daemon management
     server_manager::write_pid_file(std::process::id())?;
-    
+
+    // Make daemon a subreaper so orphaned descendant processes are reparented to us
+    // This is critical for monitoring container processes created via double-fork (PID namespace)
+    unsafe {
+        if libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0 {
+            eprintln!("Warning: Failed to set child subreaper flag");
+        }
+    }
+
     // Initialize service and run server
     let result = run_server_impl().await;
     

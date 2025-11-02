@@ -223,14 +223,11 @@ impl NetworkManager {
                 tracing::warn!("Bridge verification warning during setup completion: {}", e);
                 // Continue with setup but log the warning - bridge might still be functional
             }
-            
-            // Validate veth pair exists (if we have the methods available)
-            if let Err(e) = icc_manager.veth_manager.verify_veth_pair_created(veth_host, veth_container) {
-                return Err(SyncError::ValidationFailed {
-                    message: format!("Veth pair validation failed for {}: {}", container_id, e),
-                });
-            }
-            
+
+            // Note: Veth pair validation is performed during setup_container_network() before
+            // the container-side veth is moved to the container's network namespace.
+            // Validating here would fail because veth_container is no longer visible on host.
+
             tracing::info!("ICC bridge validation passed for container {}", container_id);
         }
         

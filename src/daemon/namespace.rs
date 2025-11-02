@@ -121,8 +121,9 @@ impl NamespaceManager {
 
                                 ConsoleLogger::debug(&format!("Received grandchild PID: {} from intermediate process", grandchild_pid));
 
-                                // Wait for intermediate process to exit
-                                let _ = waitpid(child, None);
+                                // Don't wait for intermediate - it will exit naturally
+                                // Daemon is a subreaper, so grandchild will be reparented to us (not init)
+                                // This allows waitpid() to work properly in wait_for_process_async()
 
                                 return Ok(Pid::from_raw(grandchild_pid));
                             }

@@ -301,6 +301,82 @@ fn auto_escalate_daemon_command(
     std::process::exit(exit_status.code().unwrap_or(1));
 }
 
+/// Check if daemon is running and healthy
+async fn is_daemon_healthy() -> bool {
+    server_manager::check_server_health().await
+}
+
+/// Auto-start daemon if not running (unless --no-auto-start is set)
+/// Returns Ok(()) if daemon is running/started, Err if failed to start
+async fn ensure_daemon_for_client(no_auto_start: bool) -> Result<(), Box<dyn std::error::Error>> {
+    // Check if daemon is already running and healthy
+    if is_daemon_healthy().await {
+        return Ok(());
+    }
+
+    // If auto-start is disabled, fail immediately
+    if no_auto_start {
+        return Err("Daemon is not running. Start it with: quilt daemon --detach".into());
+    }
+
+    // Need to start daemon - requires root privileges
+    let is_root = unsafe { libc::getuid() } == 0;
+
+    if !is_root {
+        // Re-execute with sudo to start daemon
+        Logger::debug("Daemon not running - auto-starting with elevated privileges...");
+
+        let current_exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current executable: {}", e))?;
+
+        // Build sudo command to start daemon
+        let mut cmd = std::process::Command::new("sudo");
+        cmd.arg(&current_exe);
+        cmd.arg("daemon");
+        cmd.arg("--detach");
+
+        // Preserve global flags
+        if std::env::var("QUILT_VERBOSE").is_ok() {
+            cmd.arg("--verbose");
+        }
+        if std::env::var("QUILT_QUIET").is_ok() {
+            cmd.arg("--quiet");
+        }
+
+        // Start daemon
+        let status = cmd.status()
+            .map_err(|e| format!("Failed to start daemon: {}", e))?;
+
+        if !status.success() {
+            return Err("Failed to start daemon".into());
+        }
+
+        // Wait briefly for daemon to be ready
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // Verify it's healthy
+        if !is_daemon_healthy().await {
+            return Err("Daemon started but not responsive. Try: quilt daemon --status".into());
+        }
+
+        Logger::debug("Daemon auto-started successfully");
+        Ok(())
+    } else {
+        // We're root - start daemon directly
+        server_manager::start_daemon_background()
+            .map_err(|e| format!("Failed to start daemon: {}", e))?;
+
+        // Wait for daemon to be ready
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        if !is_daemon_healthy().await {
+            return Err("Daemon started but not responsive".into());
+        }
+
+        Ok(())
+    }
+}
+
 /// Handle daemon management commands
 async fn handle_daemon_command(
     detach: bool,
@@ -391,7 +467,10 @@ async fn handle_client_command(cli: QuiltCli) -> Result<(), Box<dyn std::error::
     use std::time::Duration;
     use tonic::transport::Channel;
 
-    // Create gRPC client connection - this will fail if daemon isn't running
+    // Ensure daemon is running (auto-start if needed and allowed)
+    ensure_daemon_for_client(cli.no_auto_start).await?;
+
+    // Create gRPC client connection - daemon should be running now
     let channel = match Channel::from_shared(cli.server.clone())?
         .timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(10))
@@ -448,12 +527,8 @@ async fn handle_client_command(cli: QuiltCli) -> Result<(), Box<dyn std::error::
         }
 
         Commands::Shell { container, shell } => {
-            // Get container ID (resolve name if needed)
-            let container_id = if let Some(ref c) = container {
-                c.clone()
-            } else {
-                return Err("Container ID or name required".into());
-            };
+            // Resolve container name to ID (supports both names and UUIDs)
+            let container_id = cli::commands::resolve_container_id(&mut client, &container, false).await?;
 
             // Create interactive shell and run it
             let shell_session = cli::InteractiveShell::new(container_id, vec![shell])?;

@@ -14,3 +14,4 @@ pub use logs::handle_logs;
 pub use create::handle_create;
 pub use exec::handle_exec; // handle_shell is deprecated - use cli::shell::InteractiveShell
 pub use volume::{handle_volume_create, handle_volume_list, handle_volume_inspect, handle_volume_remove};
+pub use common::resolve_container_id;
