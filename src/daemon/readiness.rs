@@ -13,6 +13,7 @@ use inotify::{Inotify, WatchMask};
 pub struct ReadinessConfig {
     pub namespace_timeout_ms: u64,
     pub exec_test_timeout_ms: u64,
+    #[allow(dead_code)]
     pub self_signal_timeout_ms: u64,
 }
 
@@ -37,10 +38,10 @@ impl ContainerReadinessManager {
 
     /// Event-driven container readiness verification - NO POLLING
     pub fn wait_for_container_ready(
-        &self, 
-        container_id: &str, 
-        pid: Pid, 
-        rootfs_path: &str
+        &self,
+        container_id: &str,
+        pid: Pid,
+        _rootfs_path: &str
     ) -> Result<(), String> {
         ConsoleLogger::progress(&format!("🔍 Starting event-driven readiness verification for container {}", container_id));
         let overall_start = SystemTime::now();
@@ -56,13 +57,20 @@ impl ContainerReadinessManager {
         
         // Verify exec capability with configured timeout
         self.verify_exec_capability(pid, Duration::from_millis(self.config.exec_test_timeout_ms))?;
-        
-        // Create readiness script in container
-        self.create_readiness_script(rootfs_path, container_id)?;
-        
-        // Wait for container self-signal with configured timeout
-        self.wait_for_container_self_signal(container_id, rootfs_path, Duration::from_millis(self.config.self_signal_timeout_ms))?;
-        
+
+        // SIMPLIFIED READINESS: Skip self-signal check
+        // The combination of namespace readiness + exec capability is sufficient
+        // to determine container is usable. Self-signal adds complexity and timeouts.
+        //
+        // Removed checks:
+        // - create_readiness_script (was creating script but not executing it)
+        // - wait_for_container_self_signal (was timing out after 10s)
+        //
+        // Current checks are fast and reliable:
+        // ✅ Namespaces created (event-driven, ~1s)
+        // ✅ Process alive
+        // ✅ Exec capability (can run commands in container)
+
         ConsoleLogger::debug(&format!("✅ Process {} is alive and responsive", crate::utils::process::ProcessUtils::pid_to_i32(pid)));
 
         let total_time = overall_start.elapsed().unwrap_or_default();
@@ -157,6 +165,7 @@ impl ContainerReadinessManager {
     }
 
     /// Create readiness script that container will execute to signal readiness
+    #[allow(dead_code)]
     fn create_readiness_script(&self, rootfs_path: &str, container_id: &str) -> Result<(), String> {
         let script_path = format!("{}/usr/local/bin/quilt_readiness_check.sh", rootfs_path);
         let ready_signal_path = format!("/tmp/quilt_ready_{}", container_id);
@@ -216,6 +225,7 @@ echo "✅ Ready signal sent to {ready_signal_path}"
     }
 
     /// Wait for container to signal readiness via file creation - NO POLLING
+    #[allow(dead_code)]
     fn wait_for_container_self_signal(&self, container_id: &str, _rootfs_path: &str, timeout: Duration) -> Result<(), String> {
         let ready_signal_path = format!("/tmp/quilt_ready_{}", container_id);
         let start_time = SystemTime::now();

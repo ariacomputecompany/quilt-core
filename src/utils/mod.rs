@@ -6,6 +6,7 @@ pub mod validation;
 pub mod security;
 pub mod command;
 pub mod filesystem;
+pub mod server_manager;
 
 // Re-export actually used utilities
 // Note: Direct module access is preferred throughout the codebase 

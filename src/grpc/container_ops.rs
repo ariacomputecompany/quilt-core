@@ -36,7 +36,7 @@ pub async fn start_container_process(
     
     // Get full container config from database to get image_path and command
     ConsoleLogger::debug(&format!("🔍 [STARTUP-CONFIG] Querying database for container details {}", container_id));
-    let container_record = sqlx::query("SELECT image_path, command, rootfs_path FROM containers WHERE id = ?")
+    let container_record = sqlx::query("SELECT image_path, command, rootfs_path, enable_pid_namespace, enable_mount_namespace, enable_uts_namespace, enable_ipc_namespace, enable_network_namespace FROM containers WHERE id = ?")
         .bind(container_id)
         .fetch_one(sync_engine.pool())
         .await
@@ -44,13 +44,22 @@ pub async fn start_container_process(
             ConsoleLogger::error(&format!("❌ [STARTUP-CONFIG] Database query failed for {}: {}", container_id, e));
             format!("Failed to get container details: {}", e)
         })?;
-    
+
     let image_path: String = container_record.get("image_path");
     let command: String = container_record.get("command");
     let rootfs_path: Option<String> = container_record.get("rootfs_path");
+
+    // Get namespace configuration from database
+    let enable_pid_namespace: bool = container_record.get("enable_pid_namespace");
+    let enable_mount_namespace: bool = container_record.get("enable_mount_namespace");
+    let enable_uts_namespace: bool = container_record.get("enable_uts_namespace");
+    let enable_ipc_namespace: bool = container_record.get("enable_ipc_namespace");
+    let enable_network_namespace: bool = container_record.get("enable_network_namespace");
     
-    ConsoleLogger::debug(&format!("📄 [STARTUP-CONFIG] Container {} details: image={}, command={}, rootfs={:?}", 
+    ConsoleLogger::debug(&format!("📄 [STARTUP-CONFIG] Container {} details: image={}, command={}, rootfs={:?}",
         container_id, image_path, command, rootfs_path));
+    ConsoleLogger::debug(&format!("🔧 [STARTUP-CONFIG] Container {} namespace config: pid={}, mount={}, uts={}, ipc={}, network={}",
+        container_id, enable_pid_namespace, enable_mount_namespace, enable_uts_namespace, enable_ipc_namespace, enable_network_namespace));
     
     // Get mounts for the container
     ConsoleLogger::debug(&format!("💾 [STARTUP-CONFIG] Retrieving mounts for {}", container_id));
@@ -135,13 +144,22 @@ pub async fn start_container_process(
         vec!["/bin/sh".to_string(), "-c".to_string(), command.clone()]
     };
     
+    // Create namespace configuration from database values instead of hardcoded defaults
+    let namespace_config = NamespaceConfig {
+        pid: enable_pid_namespace,
+        mount: enable_mount_namespace,
+        uts: enable_uts_namespace,
+        ipc: enable_ipc_namespace,
+        network: enable_network_namespace,
+    };
+
     let legacy_config = ContainerConfig {
         image_path: image_path.clone(),
         command: command_vec.clone(),
         environment: HashMap::new(), // TODO: Get from sync engine
         setup_commands: vec![],
         resource_limits: Some(CgroupLimits::default()),
-        namespace_config: Some(NamespaceConfig::default()),
+        namespace_config: Some(namespace_config),
         working_directory: None,
         mounts: daemon_mounts,
     };

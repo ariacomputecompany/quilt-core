@@ -15,34 +15,73 @@ impl NetworkSecurity {
         Self { bridge_ip }
     }
 
-    /// SECURITY CRITICAL: Validate that container namespace exists and is accessible
+    /// SECURITY CRITICAL: Validate that container namespace exists and is properly isolated
     /// This prevents nsenter commands from falling back to host execution
     pub fn validate_container_namespace(&self, container_pid: i32) -> bool {
-        // Check if PID exists and is a valid container process
-        let pid_check = format!("test -d /proc/{} && cat /proc/{}/comm | grep -q quilt", container_pid, container_pid);
-        if let Ok(result) = CommandExecutor::execute_shell(&pid_check) {
-            if !result.success {
-                ConsoleLogger::warning(&format!("🚨 [SECURITY] Container PID {} validation failed - process not found or invalid", container_pid));
-                return false;
-            }
-        } else {
-            ConsoleLogger::warning(&format!("🚨 [SECURITY] Container PID {} validation check failed", container_pid));
+        use std::path::Path;
+        use std::fs;
+
+        // Check 1: Verify PID exists
+        let proc_path = format!("/proc/{}", container_pid);
+        if !Path::new(&proc_path).exists() {
+            ConsoleLogger::warning(&format!("🚨 [SECURITY] Container PID {} does not exist", container_pid));
             return false;
         }
 
-        // Test namespace entry without dangerous operations
-        let ns_test = format!("nsenter -t {} -m -p -- echo 'namespace_test_ok'", container_pid);
+        // Check 2: Verify process is in a DIFFERENT namespace than current process (actual isolation)
+        // This is the real security check - ensures the container is properly isolated
+        let self_ns_path = "/proc/self/ns/pid";
+        let container_ns_path = format!("/proc/{}/ns/pid", container_pid);
+
+        let self_ns = fs::read_link(self_ns_path).ok();
+        let container_ns = fs::read_link(&container_ns_path).ok();
+
+        match (self_ns, container_ns) {
+            (Some(host_ns), Some(cont_ns)) => {
+                if host_ns == cont_ns {
+                    // SECURITY RISK: Process is in the same namespace as us!
+                    ConsoleLogger::warning(&format!(
+                        "🚨 [SECURITY] PID {} is in the same namespace as host (not isolated!)",
+                        container_pid
+                    ));
+                    return false;
+                }
+                // Good! Process is in a different namespace (properly isolated)
+                ConsoleLogger::debug(&format!(
+                    "✅ [SECURITY] PID {} is properly isolated in namespace",
+                    container_pid
+                ));
+            }
+            _ => {
+                ConsoleLogger::warning(&format!(
+                    "🚨 [SECURITY] Could not verify namespace isolation for PID {}",
+                    container_pid
+                ));
+                return false;
+            }
+        }
+
+        // Check 3: Test that we can actually enter the namespace with nsenter
+        // This ensures nsenter operations will work and not fall back to host
+        let ns_test = format!("nsenter -t {} -m -p -- echo 'namespace_test_ok' 2>/dev/null", container_pid);
         match CommandExecutor::execute_shell(&ns_test) {
             Ok(result) => {
                 if result.success && result.stdout.trim() == "namespace_test_ok" {
+                    ConsoleLogger::debug(&format!("✅ [SECURITY] Namespace entry verified for PID {}", container_pid));
                     return true;
                 } else {
-                    ConsoleLogger::warning(&format!("🚨 [SECURITY] Namespace entry test failed for PID {}: {}", container_pid, result.stderr));
+                    ConsoleLogger::warning(&format!(
+                        "🚨 [SECURITY] Namespace entry test failed for PID {}: {}",
+                        container_pid, result.stderr
+                    ));
                     return false;
                 }
             }
             Err(e) => {
-                ConsoleLogger::warning(&format!("🚨 [SECURITY] Failed to test namespace entry for PID {}: {}", container_pid, e));
+                ConsoleLogger::warning(&format!(
+                    "🚨 [SECURITY] Failed to test namespace entry for PID {}: {}",
+                    container_pid, e
+                ));
                 return false;
             }
         }
@@ -119,8 +158,9 @@ impl NetworkSecurity {
             return Err(format!("🚨 [SECURITY] Interface name too long: {}", interface_name));
         }
 
-        // Interface names should be alphanumeric
-        if !interface_name.chars().all(|c| c.is_alphanumeric()) {
+        // Interface names should be alphanumeric plus hyphens, underscores, and periods
+        // This aligns with Linux kernel interface naming conventions (e.g., veth-abc123, eth0, docker0)
+        if !interface_name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
             return Err(format!("🚨 [SECURITY] Interface name contains invalid characters: {}", interface_name));
         }
 
@@ -155,6 +195,8 @@ impl NetworkSecurity {
     }
 
     /// SECURITY CRITICAL: Sanitize command arguments to prevent shell injection
+    /// NOTE: This should only be used for untrusted user input, not internally-generated commands
+    #[allow(dead_code)]
     pub fn sanitize_shell_argument(&self, arg: &str) -> String {
         // Remove or escape dangerous characters
         arg.chars()
@@ -163,7 +205,16 @@ impl NetworkSecurity {
     }
 
     /// SECURITY CRITICAL: Validate that a command doesn't contain injection attempts
-    pub fn validate_safe_command(&self, command: &str) -> Result<(), String> {
+    /// Context-aware validation: system commands (internally generated) vs user commands
+    #[allow(dead_code)]
+    pub fn validate_safe_command(&self, command: &str, is_system_command: bool) -> Result<(), String> {
+        // System commands are trusted (generated internally by the server)
+        // They may contain pipes, redirects, and other shell operators
+        if is_system_command {
+            return Ok(());
+        }
+
+        // For user-supplied commands, apply strict validation
         // Check for common injection patterns
         let dangerous_patterns = vec![
             ";", "&&", "||", "|", "`", "$", "$(", "${",

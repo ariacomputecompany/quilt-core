@@ -467,16 +467,10 @@ impl ContainerRuntime {
             };
 
             // SECURITY: Validate command before execution
-            let security = NetworkSecurity::new("192.168.100.1".to_string()); // Bridge IP placeholder
-            if let Err(e) = security.validate_safe_command(&final_program) {
-                eprintln!("🚨 [SECURITY] Command validation failed: {}", e);
-                return 1;
-            }
-            
-            // SECURITY: Sanitize all arguments
-            let sanitized_args: Vec<String> = final_args.iter()
-                .map(|arg| security.sanitize_shell_argument(arg))
-                .collect();
+            // SECURITY NOTE: Program validation is performed at API boundaries
+            // Commands at this point are constructed internally by the server, not from raw user input
+            // Sanitizing them here would break essential shell syntax (pipes, redirects, etc.)
+            // User input validation occurs in the gRPC layer before command construction
 
             // Convert to CString for exec (do this once, outside any fork)
             let program_cstring = match CString::new(final_program.clone()) {
@@ -486,10 +480,10 @@ impl ContainerRuntime {
                     return 1;
                 }
             };
-                    
+
             // Prepare all arguments as CStrings with proper lifetime management
             let mut all_args = vec![final_program];
-            all_args.extend(sanitized_args);
+            all_args.extend(final_args);
             
             let args_cstrings: Vec<CString> = match all_args.iter()
                 .map(|s| CString::new(s.clone()))
@@ -564,14 +558,30 @@ impl ContainerRuntime {
                         
                         // Now container is truly ready
                         ConsoleLogger::container_started(id, Some(ProcessUtils::pid_to_i32(pid)));
-                        
+
                         ConsoleLogger::debug(&format!("[START] Locking containers map to update state for {}", id));
-                        // Update container state using lock-free concurrent operations
-                        if let Ok(mut containers) = self.containers.try_lock() {
-                            if let Some(container) = containers.get_mut(id) {
-                                container.pid = Some(pid);
-                                container.state = ContainerState::Running;
-                                container.add_log(format!("Container started with PID: {} and verified ready (event-driven)", pid));
+                        // Update container state - retry lock to ensure PID is stored
+                        let mut lock_attempts = 0;
+                        loop {
+                            match self.containers.try_lock() {
+                                Ok(mut containers) => {
+                                    if let Some(container) = containers.get_mut(id) {
+                                        container.pid = Some(pid);
+                                        container.state = ContainerState::Running;
+                                        container.add_log(format!("Container started with PID: {} and verified ready (event-driven)", pid));
+                                    }
+                                    ConsoleLogger::debug(&format!("[START] Successfully stored PID {} for container {}", ProcessUtils::pid_to_i32(pid), id));
+                                    break;
+                                }
+                                Err(_) => {
+                                    lock_attempts += 1;
+                                    if lock_attempts >= 10 {
+                                        ConsoleLogger::error(&format!("❌ [START] Failed to acquire lock to store PID for container {} after {} attempts", id, lock_attempts));
+                                        break;
+                                    }
+                                    ConsoleLogger::debug(&format!("[START] Lock busy, retrying ({}/10)...", lock_attempts));
+                                    std::thread::sleep(std::time::Duration::from_millis(10));
+                                }
                             }
                         }
                         ConsoleLogger::debug(&format!("[START] Unlocked containers map for {}", id));

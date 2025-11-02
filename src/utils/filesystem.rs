@@ -4,6 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 
 pub struct FileSystemUtils;
 
+#[allow(dead_code)] // Shared utilities used by different binaries
 impl FileSystemUtils {
     /// Check if a path exists and is a file
     pub fn is_file<P: AsRef<Path>>(path: P) -> bool {

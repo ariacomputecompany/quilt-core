@@ -1,6 +1,9 @@
 // src/cli/icc.rs
 // Inter-Container Communication CLI commands
 
+// Allow dead code temporarily until client command integration is complete
+#![allow(dead_code)]
+
 use clap::Subcommand;
 use std::collections::HashMap;
 use std::time::Duration;

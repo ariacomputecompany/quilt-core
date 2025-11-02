@@ -80,25 +80,117 @@ impl NamespaceManager {
     where
         F: FnOnce() -> i32 + Send + 'static,
     {
+        // Check if PID namespace is enabled
+        let has_pid_namespace = clone_flags.contains(CloneFlags::CLONE_NEWPID);
+
+        // Create a pipe for grandchild PID communication if PID namespace is enabled
+        let (pid_read_fd, pid_write_fd) = if has_pid_namespace {
+            use nix::unistd::pipe;
+            match pipe() {
+                Ok((r, w)) => (Some(r), Some(w)),
+                Err(e) => {
+                    return Err(format!("Failed to create pipe for PID communication: {}", e));
+                }
+            }
+        } else {
+            (None, None)
+        };
+
         // Use fork first, then unshare in child to avoid affecting the server process
         // This fixes the issue where unshare() was incorrectly isolating the server
-        
+
         match unsafe { nix::unistd::fork() } {
             Ok(nix::unistd::ForkResult::Parent { child }) => {
+                // Close write end of pipe in parent
+                if let Some(write_fd) = pid_write_fd {
+                    let _ = nix::unistd::close(write_fd);
+                }
+
+                // If PID namespace is enabled, read the grandchild PID from the pipe
+                if has_pid_namespace {
+                    if let Some(read_fd) = pid_read_fd {
+                        // Read the grandchild PID from the pipe
+                        let mut pid_buf = [0u8; 32];
+                        match nix::unistd::read(read_fd, &mut pid_buf) {
+                            Ok(n) if n > 0 => {
+                                let _ = nix::unistd::close(read_fd);
+                                let pid_str = std::str::from_utf8(&pid_buf[..n])
+                                    .map_err(|e| format!("Failed to parse PID: {}", e))?;
+                                let grandchild_pid: i32 = pid_str.trim().parse()
+                                    .map_err(|e| format!("Failed to parse grandchild PID: {}", e))?;
+
+                                ConsoleLogger::debug(&format!("Received grandchild PID: {} from intermediate process", grandchild_pid));
+
+                                // Wait for intermediate process to exit
+                                let _ = waitpid(child, None);
+
+                                return Ok(Pid::from_raw(grandchild_pid));
+                            }
+                            _ => {
+                                let _ = nix::unistd::close(read_fd);
+                                // Fallback to intermediate PID if pipe read fails
+                                ConsoleLogger::warning("Failed to read grandchild PID from pipe, using intermediate PID");
+                                return Ok(child);
+                            }
+                        }
+                    }
+                }
+
                 ConsoleLogger::debug(&format!("Successfully created child process with PID: {} that will setup isolated namespaces", ProcessUtils::pid_to_i32(child)));
                 Ok(child)
             }
             Ok(nix::unistd::ForkResult::Child) => {
+                // Close read end of pipe in child
+                if let Some(read_fd) = pid_read_fd {
+                    let _ = nix::unistd::close(read_fd);
+                }
+
                 // This runs in the child process - now create namespaces
                 // This approach ensures the server process is never affected
                 if let Err(e) = nix::sched::unshare(clone_flags) {
                     ConsoleLogger::error(&format!("Failed to unshare namespaces in child: {}", e));
                     std::process::exit(1);
                 }
-                
-                // Run the child function in the isolated namespaces
-                let exit_code = child_func();
-                std::process::exit(exit_code);
+
+                // PID namespace requires a double-fork:
+                // - unshare(CLONE_NEWPID) only affects future children
+                // - We need to fork again so the grandchild is in the new PID namespace
+                if has_pid_namespace {
+                    match unsafe { nix::unistd::fork() } {
+                        Ok(nix::unistd::ForkResult::Parent { child: grandchild }) => {
+                            // Intermediate process - write grandchild PID to pipe and exit
+                            if let Some(write_fd) = pid_write_fd {
+                                let grandchild_pid_str = format!("{}", ProcessUtils::pid_to_i32(grandchild));
+                                let _ = nix::unistd::write(write_fd, grandchild_pid_str.as_bytes());
+                                let _ = nix::unistd::close(write_fd);
+                            }
+
+                            ConsoleLogger::debug(&format!("Intermediate process wrote grandchild PID {} and exiting", ProcessUtils::pid_to_i32(grandchild)));
+                            std::process::exit(0);
+                        }
+                        Ok(nix::unistd::ForkResult::Child) => {
+                            // Grandchild - close pipe write end
+                            if let Some(write_fd) = pid_write_fd {
+                                let _ = nix::unistd::close(write_fd);
+                            }
+
+                            // Grandchild - this is now in the new PID namespace as PID 1
+                            ConsoleLogger::debug("Grandchild process running in new PID namespace");
+
+                            // Run the child function in the isolated namespaces
+                            let exit_code = child_func();
+                            std::process::exit(exit_code);
+                        }
+                        Err(e) => {
+                            ConsoleLogger::error(&format!("Failed to fork grandchild for PID namespace: {}", e));
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    // No PID namespace - run directly in the child
+                    let exit_code = child_func();
+                    std::process::exit(exit_code);
+                }
             }
             Err(e) => {
                 Err(format!("Failed to fork process: {}", e))

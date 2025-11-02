@@ -16,6 +16,8 @@ service QuiltService {
     rpc RemoveContainer (RemoveContainerRequest) returns (RemoveContainerResponse);
     // Executes a command in a running container
     rpc ExecContainer (ExecContainerRequest) returns (ExecContainerResponse);
+    // Executes an interactive command with bidirectional streaming
+    rpc ExecContainerInteractive (stream ExecInteractiveRequest) returns (stream ExecInteractiveResponse);
     // Starts a stopped container
     rpc StartContainer (StartContainerRequest) returns (StartContainerResponse);
     // Kills a container immediately
@@ -199,6 +201,39 @@ message ExecContainerResponse {
     string stdout = 3;                            // Standard output (if capture_output=true)
     string stderr = 4;                            // Standard error (if capture_output=true)
     string error_message = 5;                     // Error message if execution failed
+}
+
+// Interactive exec streaming messages
+message ExecInteractiveRequest {
+    oneof message {
+        ExecStartRequest start = 1;               // Initial request with command and terminal size
+        bytes stdin_data = 2;                     // Stdin data chunk to send to process
+        TerminalResize resize = 3;                // Terminal resize event
+    }
+}
+
+message ExecStartRequest {
+    string container_id = 1;                      // Container ID to execute command in
+    repeated string command = 2;                  // Command and arguments to execute
+    string working_directory = 3;                 // Working directory (optional)
+    map<string, string> environment = 4;          // Additional environment variables
+    string container_name = 5;                    // Container name (alternative to ID)
+    uint32 terminal_rows = 6;                     // Terminal height in rows
+    uint32 terminal_cols = 7;                     // Terminal width in columns
+}
+
+message TerminalResize {
+    uint32 rows = 1;                              // New terminal height
+    uint32 cols = 2;                              // New terminal width
+}
+
+message ExecInteractiveResponse {
+    oneof message {
+        bytes stdout_data = 1;                    // Stdout data chunk from process
+        bytes stderr_data = 2;                    // Stderr data chunk from process (currently unused with PTY)
+        int32 exit_code = 3;                     // Process exit code (sent when process terminates)
+        string error = 4;                         // Error message if execution failed
+    }
 }
 
 message StartContainerRequest {

@@ -10,10 +10,10 @@ pub mod quilt {
     tonic::include_proto!("quilt");
 }
 
-// Import CLI modules  
+// Import CLI modules
 #[path = "../cli/mod.rs"]
 mod cli;
-use cli::IccCommands;
+use cli::{IccCommands, InteractiveShell};
 
 // Import utils for CLI diagnostics
 #[path = "../utils/mod.rs"]
@@ -203,6 +203,16 @@ enum Commands {
         working_directory: Option<String>,
         #[clap(long, help = "Capture output")]
         capture_output: bool,
+    },
+
+    /// Enter an interactive shell in a running container
+    Shell {
+        #[clap(help = "ID or name of the container")]
+        container: String,
+        #[clap(short = 'n', long, help = "Treat input as container name")]
+        by_name: bool,
+        #[clap(help = "Shell command to execute (default: /bin/sh)", default_value = "/bin/sh")]
+        command: Vec<String>,
     },
 
     /// Monitor container processes and system state
@@ -1065,6 +1075,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(e) => {
                     eprintln!("❌ Error executing command: {}", e.message());
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::Shell { container, by_name, command } => {
+            let container_id = resolve_container_id(&mut client, &container, by_name).await?;
+            println!("🐚 Entering interactive shell in container {}...", container_id);
+            println!("   (Use 'exit' or Ctrl+D to exit)\n");
+
+            // Create interactive shell instance
+            let shell = match InteractiveShell::new(container_id.clone(), command) {
+                Ok(shell) => shell,
+                Err(e) => {
+                    eprintln!("❌ Failed to create interactive shell: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // Run interactive session
+            match shell.run(client).await {
+                Ok(exit_code) => {
+                    println!("\n🏁 Shell session ended (exit code: {})", exit_code);
+                    std::process::exit(exit_code);
+                }
+                Err(e) => {
+                    eprintln!("\n❌ Shell session error: {}", e);
                     std::process::exit(1);
                 }
             }

@@ -1,6 +1,7 @@
 use std::process::Command;
 use std::fs;
 
+#[allow(dead_code)] // Used by CLI in debug mode only
 #[derive(Debug, Clone)]
 pub struct CommandResult {
     pub success: bool,
@@ -9,8 +10,10 @@ pub struct CommandResult {
     pub exit_code: Option<i32>,
 }
 
+#[allow(dead_code)] // Used by CLI in debug mode only
 pub struct CommandExecutor;
 
+#[allow(dead_code)] // Used by CLI in debug mode only
 impl CommandExecutor {
     /// Execute a shell command and return result
     pub fn execute_shell(command: &str) -> Result<CommandResult, String> {

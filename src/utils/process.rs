@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ProcessUtils;
 
+#[allow(dead_code)] // Shared utilities used by different binaries
 impl ProcessUtils {
     /// Convert nix::Pid to i32 for display/logging
     pub fn pid_to_i32(pid: Pid) -> i32 {
