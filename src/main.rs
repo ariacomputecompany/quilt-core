@@ -467,16 +467,10 @@ async fn handle_client_command(cli: QuiltCli) -> Result<(), Box<dyn std::error::
     use std::time::Duration;
     use tonic::transport::Channel;
 
-    eprintln!("🔍 [SHELL-DEBUG] handle_client_command called");
-    eprintln!("🔍 [SHELL-DEBUG] Server address: {}", cli.server);
-
     // Ensure daemon is running (auto-start if needed and allowed)
-    eprintln!("🔍 [SHELL-DEBUG] Ensuring daemon is running (auto_start={})", !cli.no_auto_start);
     ensure_daemon_for_client(cli.no_auto_start).await?;
-    eprintln!("🔍 [SHELL-DEBUG] Daemon check complete");
 
     // Create gRPC client connection - daemon should be running now
-    eprintln!("🔍 [SHELL-DEBUG] Creating gRPC client connection to {}...", cli.server);
     let channel = match Channel::from_shared(cli.server.clone())?
         .timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(10))
@@ -486,21 +480,15 @@ async fn handle_client_command(cli: QuiltCli) -> Result<(), Box<dyn std::error::
         .connect()
         .await
     {
-        Ok(ch) => {
-            eprintln!("🔍 [SHELL-DEBUG] gRPC connection established");
-            ch
-        },
-        Err(e) => {
-            eprintln!("🔍 [SHELL-DEBUG] gRPC connection FAILED: {}", e);
+        Ok(ch) => ch,
+        Err(_e) => {
             Logger::error("Daemon is not running");
             Logger::info("Start the daemon with: quilt daemon --detach");
             std::process::exit(1);
         }
     };
 
-    eprintln!("🔍 [SHELL-DEBUG] Creating QuiltServiceClient...");
     let mut client = quilt::quilt_service_client::QuiltServiceClient::new(channel);
-    eprintln!("🔍 [SHELL-DEBUG] Client created successfully");
 
     // Route to appropriate command handler
     match cli.command {
@@ -539,20 +527,13 @@ async fn handle_client_command(cli: QuiltCli) -> Result<(), Box<dyn std::error::
         }
 
         Commands::Shell { container, shell } => {
-            eprintln!("🔍 [SHELL-DEBUG] Shell command initiated for container: {:?}", container);
-
             // Resolve container name to ID (supports both names and UUIDs)
-            eprintln!("🔍 [SHELL-DEBUG] Resolving container name/ID...");
             let container_id = cli::commands::resolve_container_id(&mut client, &container, false).await?;
-            eprintln!("🔍 [SHELL-DEBUG] Resolved to container ID: {}", container_id);
 
             // Create interactive shell and run it
-            eprintln!("🔍 [SHELL-DEBUG] Creating shell session with command: {}", shell);
             let shell_session = cli::InteractiveShell::new(container_id, vec![shell])?;
 
-            eprintln!("🔍 [SHELL-DEBUG] Running shell session...");
             let exit_code = shell_session.run(client).await?;
-            eprintln!("🔍 [SHELL-DEBUG] Shell session exited with code: {}", exit_code);
             std::process::exit(exit_code);
         }
 

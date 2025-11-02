@@ -1053,7 +1053,6 @@ impl QuiltService for QuiltServiceImpl {
             })).await;
             return Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
         }
-        eprintln!("🔍 [SHELL-SPAWN] Set CLOEXEC on master_fd to prevent inheritance");
 
         // Prevent PtyPair Drop from closing the fds - we manage them manually now
         std::mem::forget(pty);
@@ -1087,12 +1086,6 @@ impl QuiltService for QuiltServiceImpl {
         // Fork nsenter with PTY
         use std::process::{Command, Stdio};
         use std::os::unix::io::FromRawFd;
-
-        eprintln!("🔍 [SHELL-SPAWN] Spawning interactive shell in container");
-        eprintln!("🔍 [SHELL-SPAWN] Container ID: {}", container_id);
-        eprintln!("🔍 [SHELL-SPAWN] PID: {}", pid);
-        eprintln!("🔍 [SHELL-SPAWN] Command: {:?}", command);
-        eprintln!("🔍 [SHELL-SPAWN] Rootfs: {}", rootfs_path);
 
         // Duplicate slave_fd for each stdio stream to avoid triple-ownership bug
         // Each Stdio::from_raw_fd takes ownership, so we need separate FDs
@@ -1149,12 +1142,15 @@ impl QuiltService for QuiltServiceImpl {
 
         // Execute shell with proper environment setup
         // Use setsid to make the shell process a session leader with PTY as controlling terminal
+        // Set TERM for proper terminal capabilities (enables clear, colors, etc.)
         let shell_setup_cmd = format!(
-            "export PATH=/bin:/usr/bin:/sbin:/usr/sbin:$PATH; export PS1='[{}]$ '; exec {}",
+            "export PATH=/bin:/usr/bin:/sbin:/usr/sbin:$PATH; \
+             export TERM=xterm-256color; \
+             export PS1='[{}]$ '; \
+             printf '\\n'; \
+             exec {}",
             prompt, command_str
         );
-
-        eprintln!("🔍 [SHELL-SPAWN] Full command: setsid nsenter -t {} -p -m -n -u -- chroot {} sh -c \"{}\"", pid, rootfs_path, shell_setup_cmd);
 
         let child = match unsafe {
             Command::new("setsid")
@@ -1172,10 +1168,7 @@ impl QuiltService for QuiltServiceImpl {
                 .stderr(Stdio::from_raw_fd(slave_fd_stderr))
                 .spawn()
         } {
-            Ok(c) => {
-                eprintln!("🔍 [SHELL-SPAWN] Process spawned successfully, PID: {}", c.id());
-                c
-            },
+            Ok(c) => c,
             Err(e) => {
                 eprintln!("❌ [SHELL-SPAWN] Failed to spawn process: {}", e);
                 let (tx, rx) = mpsc::channel(1);
@@ -1225,13 +1218,8 @@ impl QuiltService for QuiltServiceImpl {
         tokio::spawn(async move {
             use tokio::io::unix::AsyncFd;
 
-            eprintln!("🔍 [PTY-READER] Task started, creating AsyncFd for master PTY");
-
             let async_fd = match AsyncFd::new(master_fd_owned) {
-                Ok(fd) => {
-                    eprintln!("🔍 [PTY-READER] AsyncFd created successfully");
-                    fd
-                },
+                Ok(fd) => fd,
                 Err(e) => {
                     eprintln!("❌ [PTY-READER] Failed to create AsyncFd: {}", e);
                     let _ = tx_output.send(Ok(quilt::ExecInteractiveResponse {
@@ -1244,7 +1232,6 @@ impl QuiltService for QuiltServiceImpl {
             };
 
             let mut buffer = vec![0u8; 8192];
-            eprintln!("🔍 [PTY-READER] Entering read loop");
 
             loop {
                 let mut guard = match async_fd.readable().await {
@@ -1262,18 +1249,15 @@ impl QuiltService for QuiltServiceImpl {
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
                 }) {
                     Ok(Ok(n)) if n > 0 => {
-                        eprintln!("🔍 [PTY-READER] Read {} bytes from PTY", n);
                         let data = buffer[..n].to_vec();
                         if tx_output.send(Ok(quilt::ExecInteractiveResponse {
                             message: Some(quilt::exec_interactive_response::Message::StdoutData(data)),
                         })).await.is_err() {
-                            eprintln!("❌ [PTY-READER] Client disconnected, stopping reader");
                             break;
                         }
                         guard.clear_ready();
                     }
                     Ok(Ok(_)) => {
-                        eprintln!("🔍 [PTY-READER] EOF reached, stopping reader");
                         break;
                     },
                     Ok(Err(e)) => {
@@ -1281,12 +1265,10 @@ impl QuiltService for QuiltServiceImpl {
                         break;
                     },
                     Err(_would_block) => {
-                        eprintln!("🔍 [PTY-READER] Would block, retrying");
                         continue;
                     },
                 }
             }
-            eprintln!("🔍 [PTY-READER] Task exiting, notifying exit waiter");
             // Signal exit waiter that PTY reader has finished draining all data
             pty_reader_done_clone.notify_one();
         });
@@ -1296,20 +1278,13 @@ impl QuiltService for QuiltServiceImpl {
         tokio::spawn(async move {
             use tokio::io::unix::AsyncFd;
 
-            eprintln!("🔍 [PTY-WRITER] Task started, creating AsyncFd for master PTY");
-
             let async_fd = match AsyncFd::new(master_fd_write_owned) {
-                Ok(fd) => {
-                    eprintln!("🔍 [PTY-WRITER] AsyncFd created successfully");
-                    fd
-                },
+                Ok(fd) => fd,
                 Err(e) => {
                     eprintln!("❌ [PTY-WRITER] Failed to create AsyncFd: {}", e);
                     return;
                 },
             };
-
-            eprintln!("🔍 [PTY-WRITER] Entering write loop, waiting for client data");
 
             while let Some(result) = in_stream.next().await {
                 match result {
@@ -1317,7 +1292,6 @@ impl QuiltService for QuiltServiceImpl {
                         if let Some(message) = req.message {
                             match message {
                                 quilt::exec_interactive_request::Message::StdinData(data) => {
-                                    eprintln!("🔍 [PTY-WRITER] Received {} bytes from client", data.len());
                                     let mut guard = match async_fd.writable().await {
                                         Ok(g) => g,
                                         Err(e) => {
@@ -1332,8 +1306,7 @@ impl QuiltService for QuiltServiceImpl {
                                         nix::unistd::write(fd.as_raw_fd(), &data)
                                             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
                                     }) {
-                                        Ok(Ok(n)) => {
-                                            eprintln!("🔍 [PTY-WRITER] Wrote {} bytes to PTY", n);
+                                        Ok(Ok(_n)) => {
                                             guard.clear_ready();
                                         }
                                         Ok(Err(e)) => {
@@ -1341,19 +1314,16 @@ impl QuiltService for QuiltServiceImpl {
                                             break;
                                         }
                                         Err(_would_block) => {
-                                            eprintln!("🔍 [PTY-WRITER] Would block on write");
                                         }
                                     }
                                 }
                                 quilt::exec_interactive_request::Message::Resize(resize) => {
-                                    eprintln!("🔍 [PTY-WRITER] Resizing PTY to {}x{}", resize.rows, resize.cols);
                                     use std::os::unix::io::AsRawFd;
                                     if let Err(e) = pty::resize_pty(async_fd.get_ref().as_raw_fd(), resize.rows as u16, resize.cols as u16) {
                                         eprintln!("❌ [PTY-WRITER] Failed to resize PTY: {}", e);
                                     }
                                 }
                                 _ => {
-                                    eprintln!("🔍 [PTY-WRITER] Received unknown message type");
                                 }
                             }
                         }
@@ -1364,16 +1334,12 @@ impl QuiltService for QuiltServiceImpl {
                     },
                 }
             }
-            eprintln!("🔍 [PTY-WRITER] Task exiting");
 
             // Client disconnected - immediately terminate the shell process
-            eprintln!("🔍 [PTY-WRITER] Client disconnected, terminating shell process with SIGKILL");
             use nix::sys::signal::{kill, Signal};
             use nix::unistd::Pid;
             if let Err(e) = kill(Pid::from_raw(child_pid_for_writer as i32), Signal::SIGKILL) {
                 eprintln!("❌ [PTY-WRITER] Failed to send SIGKILL to process {}: {}", child_pid_for_writer, e);
-            } else {
-                eprintln!("🔍 [PTY-WRITER] SIGKILL sent successfully to process {}", child_pid_for_writer);
             }
         });
 
@@ -1381,8 +1347,6 @@ impl QuiltService for QuiltServiceImpl {
         tokio::spawn(async move {
             use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
             use nix::unistd::Pid;
-
-            eprintln!("🔍 [EXIT-WAITER] Task started, waiting for process exit");
 
             // Step 1: Wait for child process exit (non-blocking, async-friendly)
             let exit_code = loop {
@@ -1393,15 +1357,12 @@ impl QuiltService for QuiltServiceImpl {
                         continue;
                     }
                     Ok(WaitStatus::Exited(_, code)) => {
-                        eprintln!("🔍 [EXIT-WAITER] Process exited with code {}", code);
                         break code;
                     }
-                    Ok(WaitStatus::Signaled(_, signal, _)) => {
-                        eprintln!("🔍 [EXIT-WAITER] Process killed by signal {}", signal);
+                    Ok(WaitStatus::Signaled(_, _signal, _)) => {
                         break -1;
                     }
                     Ok(_) => {
-                        eprintln!("🔍 [EXIT-WAITER] Process terminated (other status)");
                         break -1;
                     }
                     Err(e) => {
@@ -1412,16 +1373,12 @@ impl QuiltService for QuiltServiceImpl {
             };
 
             // Step 2: Wait for PTY reader to finish draining all buffered data
-            eprintln!("🔍 [EXIT-WAITER] Process exited, waiting for PTY reader to finish draining data");
             pty_reader_done.notified().await;
-            eprintln!("🔍 [EXIT-WAITER] PTY reader confirmed done, sending exit code");
 
             // Step 3: NOW send exit code - guaranteed to be AFTER all output
             let _ = tx.send(Ok(quilt::ExecInteractiveResponse {
                 message: Some(quilt::exec_interactive_response::Message::ExitCode(exit_code)),
             })).await;
-
-            eprintln!("🔍 [EXIT-WAITER] Task exiting");
         });
 
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))

@@ -49,12 +49,8 @@ pub struct InteractiveShell {
 impl InteractiveShell {
     /// Create a new interactive shell session
     pub fn new(container_id: String, command: Vec<String>) -> Result<Self, String> {
-        eprintln!("🔍 [SHELL-DEBUG] Creating InteractiveShell for container: {}", container_id);
-        eprintln!("🔍 [SHELL-DEBUG] Command: {:?}", command);
-
         // Get terminal size, use default if not a TTY
         let (cols, rows) = terminal_size().unwrap_or((80, 24));
-        eprintln!("🔍 [SHELL-DEBUG] Terminal size: {}x{}", cols, rows);
 
         let resize_flag = Arc::new(AtomicBool::new(false));
 
@@ -64,7 +60,6 @@ impl InteractiveShell {
             eprintln!("Warning: Failed to register SIGWINCH handler: {}", e);
         }
 
-        eprintln!("🔍 [SHELL-DEBUG] InteractiveShell created successfully");
         Ok(Self {
             container_id,
             command,
@@ -79,28 +74,17 @@ impl InteractiveShell {
         mut self,
         mut client: QuiltServiceClient<tonic::transport::Channel>,
     ) -> Result<i32, String> {
-        eprintln!("🔍 [SHELL-DEBUG] Starting interactive session...");
-
         // Put terminal in raw mode (RAII cleanup on drop)
         // Skip raw mode if stdin is not a TTY (e.g., when piping input for testing)
-        eprintln!("🔍 [SHELL-DEBUG] Entering raw terminal mode...");
         let _terminal_guard = match RawTerminalGuard::new() {
-            Ok(guard) => {
-                eprintln!("🔍 [SHELL-DEBUG] Raw mode enabled");
-                Some(guard)
-            },
-            Err(e) => {
-                eprintln!("🔍 [SHELL-DEBUG] Could not enter raw mode (not a TTY?): {}, continuing anyway", e);
-                None
-            }
+            Ok(guard) => Some(guard),
+            Err(_e) => None
         };
 
         // Create channel for sending requests to server
-        eprintln!("🔍 [SHELL-DEBUG] Creating mpsc channel for requests...");
         let (tx, rx) = mpsc::channel::<ExecInteractiveRequest>(32);
 
         // Send initial start request
-        eprintln!("🔍 [SHELL-DEBUG] Preparing start request...");
         let start_request = ExecInteractiveRequest {
             message: Some(crate::quilt::exec_interactive_request::Message::Start(
                 ExecStartRequest {
@@ -115,49 +99,33 @@ impl InteractiveShell {
             )),
         };
 
-        eprintln!("🔍 [SHELL-DEBUG] Sending start request...");
         tx.send(start_request)
             .await
             .map_err(|e| format!("Failed to send start request: {}", e))?;
-        eprintln!("🔍 [SHELL-DEBUG] Start request sent");
 
         // Create streaming request
-        eprintln!("🔍 [SHELL-DEBUG] Creating request stream...");
         let request_stream = ReceiverStream::new(rx);
 
-        eprintln!("🔍 [SHELL-DEBUG] Calling exec_container_interactive gRPC method...");
         let response = client
             .exec_container_interactive(request_stream)
             .await
-            .map_err(|e| {
-                eprintln!("🔍 [SHELL-DEBUG] exec_container_interactive FAILED: {}", e);
-                format!("Failed to start interactive session: {}", e)
-            })?;
+            .map_err(|e| format!("Failed to start interactive session: {}", e))?;
 
-        eprintln!("🔍 [SHELL-DEBUG] Got response from server, extracting stream...");
         let mut response_stream = response.into_inner();
-        eprintln!("🔍 [SHELL-DEBUG] Response stream ready");
 
         // Spawn task to forward stdin to container
-        eprintln!("🔍 [SHELL-DEBUG] Spawning stdin forwarding task...");
         let tx_clone = tx.clone();
         let resize_flag = self.resize_flag.clone();
         let stdin_task = tokio::spawn(async move {
             Self::forward_stdin(tx_clone, resize_flag).await
         });
-        eprintln!("🔍 [SHELL-DEBUG] Stdin task spawned");
 
         // Spawn task to receive and display output from container
-        eprintln!("🔍 [SHELL-DEBUG] Starting output handler...");
         let exit_code = self.handle_output(&mut response_stream, tx.clone()).await?;
-        eprintln!("🔍 [SHELL-DEBUG] Output handler finished with exit code: {}", exit_code);
 
         // Abort stdin task - no need to wait since shell has exited
-        eprintln!("🔍 [SHELL-DEBUG] Aborting stdin task (shell exited)...");
         stdin_task.abort();
-        eprintln!("🔍 [SHELL-DEBUG] Stdin task aborted");
 
-        eprintln!("🔍 [SHELL-DEBUG] Interactive session ending");
         Ok(exit_code)
     }
 
