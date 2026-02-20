@@ -56,6 +56,9 @@ parking_lot = "0.12"
 scopeguard = "1.2"
 inotify = "0.10"
 num_cpus = "1.16"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+sha2 = "0.10"
+walkdir = "2.4"
 
 # DNS server dependencies
 trust-dns-proto = "0.23"

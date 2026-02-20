@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
+use walkdir::WalkDir;
 
 /// Content-addressable blob store
 pub struct ContentStore {
@@ -221,6 +222,59 @@ impl ImageStore {
             .join(&reference.registry)
             .join(&reference.repository)
             .join(tag_or_digest)
+    }
+
+    /// Get stored manifest digest for an image reference
+    pub fn get_image_ref(&self, reference: &crate::image::ImageReference) -> Result<Option<String>> {
+        let ref_path = self.ref_path(reference);
+        if !ref_path.exists() {
+            return Ok(None);
+        }
+        let digest = std::fs::read_to_string(ref_path)?.trim().to_string();
+        if digest.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(digest))
+    }
+
+    /// Remove stored image reference metadata
+    pub fn remove_image_ref(&self, reference: &crate::image::ImageReference) -> Result<()> {
+        let ref_path = self.ref_path(reference);
+        if ref_path.exists() {
+            std::fs::remove_file(ref_path)?;
+        }
+        Ok(())
+    }
+
+    /// List all stored image reference entries from metadata
+    pub fn list_image_refs(&self) -> Result<Vec<String>> {
+        if !self.metadata_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut out = Vec::new();
+        for entry in WalkDir::new(&self.metadata_path).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let rel = match entry.path().strip_prefix(&self.metadata_path) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let parts: Vec<_> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            let registry = &parts[0];
+            let tag = &parts[parts.len() - 1];
+            let repository = parts[1..parts.len() - 1].join("/");
+            out.push(format!("{}/{}:{}", registry, repository, tag));
+        }
+
+        out.sort();
+        out.dedup();
+        Ok(out)
     }
 }
 

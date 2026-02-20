@@ -19,6 +19,12 @@ use cli::IccCommands;
 #[path = "../utils/mod.rs"]
 mod utils;
 
+#[path = "../image/mod.rs"]
+mod image;
+
+#[path = "../registry/mod.rs"]
+mod registry;
+
 // Import individual utilities instead of full sync module to avoid path conflicts
 
 use quilt::quilt_service_client::QuiltServiceClient;
@@ -161,6 +167,30 @@ enum Commands {
     List {
         #[clap(long, help = "Filter by state: created, starting, running, exited, error")]
         state: Option<String>,
+    },
+
+    /// Pull an OCI image from registry
+    Pull {
+        #[clap(help = "Image reference (e.g., nginx:latest)")]
+        image: String,
+        #[clap(short = 'f', long, help = "Force re-download")]
+        force: bool,
+    },
+
+    /// List cached OCI images
+    Images,
+
+    /// Remove cached OCI image reference
+    Rmi {
+        #[clap(help = "Image reference to remove")]
+        image: String,
+    },
+
+    /// Inspect cached OCI image metadata
+    #[clap(name = "image-inspect")]
+    ImageInspect {
+        #[clap(help = "Image reference to inspect")]
+        image: String,
     },
     
     /// Create a production-ready persistent container
@@ -382,6 +412,117 @@ async fn resolve_container_id(
     } else {
         Ok(container.to_string())
     }
+}
+
+fn image_store() -> Result<image::ImageStore, Box<dyn std::error::Error>> {
+    Ok(image::ImageStore::new("/var/lib/quilt/images")?)
+}
+
+async fn handle_pull_image(image_ref: &str, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use image::ImageReference;
+    use registry::{PullEvent, PullOptions, PullProgress, RegistryClient};
+
+    let reference = ImageReference::parse(image_ref)
+        .map_err(|e| format!("Invalid image reference '{}': {}", image_ref, e))?;
+    let store = image_store()?;
+    let client = RegistryClient::new()?;
+
+    println!("📥 Pulling image: {}", reference);
+    let progress: PullProgress = Box::new(|event| match event {
+        PullEvent::Started { reference } => println!("  started: {}", reference),
+        PullEvent::ResolvingManifest => println!("  resolving manifest"),
+        PullEvent::ManifestResolved { digest, layers } => {
+            println!("  manifest: {} ({} layers)", digest, layers)
+        }
+        PullEvent::DownloadingLayer { digest, current, total } => {
+            let short = &digest[..12.min(digest.len())];
+            println!("  layer {}/{}: {}", current, total, short);
+        }
+        PullEvent::LayerDownloaded {
+            digest,
+            size,
+            cached,
+        } => {
+            let short = &digest[..12.min(digest.len())];
+            println!(
+                "  downloaded: {} ({} bytes{})",
+                short,
+                size,
+                if cached { ", cached" } else { "" }
+            );
+        }
+        PullEvent::Complete { digest, size } => println!("  complete: {} ({})", digest, size),
+        PullEvent::Error { message } => eprintln!("  error: {}", message),
+    });
+
+    let options = PullOptions {
+        force,
+        max_concurrent: 4,
+    };
+
+    let image = client.pull(&reference, &store, &options, Some(&progress)).await?;
+    println!("✅ Pulled {} ({})", image.reference, image.digest);
+    Ok(())
+}
+
+fn handle_list_images() -> Result<(), Box<dyn std::error::Error>> {
+    let store = image_store()?;
+    let refs = store.list_image_refs()?;
+    if refs.is_empty() {
+        println!("📦 No cached images");
+        return Ok(());
+    }
+    println!("📦 Cached images:");
+    for r in refs {
+        println!("  {}", r);
+    }
+    Ok(())
+}
+
+fn handle_remove_image(image_ref: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use image::ImageReference;
+    let store = image_store()?;
+    let reference = ImageReference::parse(image_ref)
+        .map_err(|e| format!("Invalid image reference '{}': {}", image_ref, e))?;
+    store.remove_image_ref(&reference)?;
+    println!("🗑️  Removed image reference: {}", reference);
+    Ok(())
+}
+
+async fn handle_inspect_image(image_ref: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use image::ImageReference;
+    let store = image_store()?;
+    let manager = image::ImageManager::new("/var/lib/quilt/images")?;
+    let reference = ImageReference::parse(image_ref)
+        .map_err(|e| format!("Invalid image reference '{}': {}", image_ref, e))?;
+
+    let manifest_digest = match store.get_image_ref(&reference)? {
+        Some(d) => d,
+        None => {
+            eprintln!("Image not found in local store: {}", reference);
+            std::process::exit(1);
+        }
+    };
+    let manifest_blob = store.get_blob(&manifest_digest)?;
+    let manifest: image::OciManifest = serde_json::from_slice(&manifest_blob)?;
+    let image = manager
+        .load_image(&reference, &manifest_digest, &manifest.config.digest)
+        .await?;
+
+    println!("Image: {}", image.reference);
+    println!("Digest: {}", image.digest);
+    println!("Size: {}", image.size);
+    println!("Layers: {}", image.manifest.layers.len());
+    if let Some(user) = image.user() {
+        println!("User: {}", user);
+    }
+    if let Some(cmd) = image.default_cmd() {
+        println!("Cmd: {:?}", cmd);
+    }
+    if let Some(ep) = image.entrypoint() {
+        println!("Entrypoint: {:?}", ep);
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -951,6 +1092,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(1);
                 }
             }
+        }
+
+        Commands::Pull { image, force } => {
+            handle_pull_image(&image, force).await?;
+        }
+
+        Commands::Images => {
+            handle_list_images()?;
+        }
+
+        Commands::Rmi { image } => {
+            handle_remove_image(&image)?;
+        }
+
+        Commands::ImageInspect { image } => {
+            handle_inspect_image(&image).await?;
         }
         
         Commands::CreateProduction { image_path, name, setup, env, memory, cpu, no_network } => {
@@ -2081,6 +2238,21 @@ mod tests {
                 assert_eq!(state, Some("running".to_string()));
             }
             _ => panic!("Expected List command"),
+        }
+    }
+
+    #[test]
+    fn test_pull_command_parsing() {
+        let args = vec!["cli", "pull", "nginx:latest", "--force"];
+
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Commands::Pull { image, force } => {
+                assert_eq!(image, "nginx:latest");
+                assert!(force);
+            }
+            _ => panic!("Expected Pull command"),
         }
     }
     
