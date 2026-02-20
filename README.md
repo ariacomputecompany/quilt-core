@@ -1,27 +1,36 @@
-# Quilt
+# Quilt OSS
 
-Rust container runtime with SQLite-based sync engine.
+Open-source Quilt runtime for self-hosting on Linux.
 
-## Overview
+## What This Repo Is
 
-Quilt is a container runtime that uses Linux namespaces and cgroups for isolation. It provides a gRPC API for container management and a CLI client for interaction.
+`quilt-core` is the open-source runtime: container lifecycle, networking, image workflow, sync/state engine, and local operational tooling.
 
-## Architecture
+This repo is intended for local/self-hosted operation, not Quilt Cloud control-plane deployment.
 
-- **quilt**: gRPC server daemon managing containers
-- **cli**: Command-line client
-- **SQLite backend**: Non-blocking state management
-- **Namespaces**: PID, mount, UTS, IPC, network isolation
-- **Cgroups**: Memory and CPU resource limits
+## Scope
+
+Included in OSS:
+- gRPC daemon (`quilt`) and CLI (`cli`)
+- Linux container runtime primitives (namespaces, cgroups, process supervision)
+- SQLite-backed sync/state engine
+- ICC networking stack (bridge, veth, DNS manager, firewall/netlink path)
+- Image/registry workflows and runtime support modules
+- Volume and metrics paths
+- Fozzy scenarios and verification tooling
+
+Excluded from OSS scope:
+- HTTP API surface and web middleware/routes
+- multi-tenant auth/user/admin/subscription cloud logic
+- serverless function pool/manager logic
+- cloud terminal/session product surface
 
 ## Requirements
 
-- Linux kernel with namespace support
-- cgroup v1 or v2
-- Rust 1.70+
-- gcc
-- pkg-config
-- protobuf compiler
+- Linux host (cgroups + namespaces enabled)
+- Rust toolchain (edition 2021; recent stable recommended)
+- `protoc` (for gRPC/protobuf codegen)
+- common build tools (`gcc`, `pkg-config`)
 
 ## Build
 
@@ -29,114 +38,80 @@ Quilt is a container runtime that uses Linux namespaces and cgroups for isolatio
 cargo build --release
 ```
 
-## Usage
+Binaries:
+- `target/release/quilt`
+- `target/release/cli`
+- `target/release/minit`
 
-### Start Server
+## Run
+
+Start daemon:
+
 ```bash
 ./target/release/quilt
 ```
 
-### Generate Container Image
+Basic CLI flow:
+
 ```bash
-./scripts/dev.sh generate minimal
+./target/release/cli --help
+./target/release/cli list
+./target/release/cli images
 ```
 
-### Create Container
+Optional local stack:
+
 ```bash
-./target/release/cli create \
-  --image-path ./nixos-minimal.tar.gz \
-  --memory-limit 512 \
-  --cpu-limit 50.0 \
-  --enable-all-namespaces \
-  -- /bin/sh -c "echo hello"
-```
-
-### Container Operations
-```bash
-# Status
-./target/release/cli status <container-id>
-
-# Logs
-./target/release/cli logs <container-id>
-
-# Execute command
-./target/release/cli exec <container-id> <command>
-
-# Stop
-./target/release/cli stop <container-id>
-
-# Remove
-./target/release/cli remove <container-id>
-```
-
-### Inter-Container Communication
-```bash
-# Ping between containers
-./target/release/cli icc ping <container-1> <container-2>
-
-# Execute via ICC
-./target/release/cli icc exec <container-id> <command>
+docker compose up --build
 ```
 
 ## Testing
 
+Fozzy is the primary verification path in this repo.
+
+Recommended full gate:
+
 ```bash
-# Basic functionality tests
-./tests/test_container_functionality.sh       # Core container features (~18s)
-./tests/test_sync_engine.sh                   # SQLite sync engine
-./tests/test_icc.sh                           # Inter-container communication
-
-# Advanced tests
-./tests/test_runtime_downloads.sh             # Real software downloads (~25s)
-./tests/test_volumes_comprehensive.sh         # Volume functionality
-./tests/test_production_containers.sh         # Production readiness
-
-# Development helper
-./scripts/dev.sh test                          # Run comprehensive test suite
+fozzy full \
+  --scenario-root tests \
+  --seed 1337 \
+  --doctor-runs 5 \
+  --fuzz-time 2s \
+  --explore-steps 200 \
+  --explore-nodes 3 \
+  --allow-expected-failures \
+  --require-topology-coverage . \
+  --topology-min-risk 60 \
+  --topology-profile pedantic \
+  --json
 ```
 
-## Project Structure
+Additional script tests are in `tests/` (container, ICC, sync, volume, stress, diagnostics).
 
-```
+## Project Layout
+
+```text
 src/
-├── main.rs           # gRPC server
-├── cli/              # CLI client
-├── daemon/           # Container runtime
-├── sync/             # SQLite state engine
-├── icc/              # Inter-container communication
-└── utils/            # Shared utilities
+  main.rs            # gRPC daemon
+  cli/               # CLI client
+  daemon/            # runtime + system integration
+  sync/              # SQLite state/scheduling/orchestration
+  icc/               # networking + messaging
+  image/             # OCI image handling
+  registry/          # registry client/auth flows
+  usage/             # usage event tracking
+  utils/             # shared runtime utilities
 
-proto/
-└── quilt.proto       # gRPC service definitions
-
-scripts/
-└── dev.sh            # Development helper script
-
-tests/                # Test scripts
+proto/               # gRPC proto definitions
+scripts/             # install/migration/dev helpers
+tests/               # shell + fozzy test scenarios
 ```
-
-## Performance
-
-- Container creation: ~200ms
-- Status queries: <1ms
-- Command execution: <10ms
-- Supports parallel container operations
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/name`)
-3. Commit changes (`git commit -am 'Add feature'`)
-4. Push to branch (`git push origin feature/name`)
-5. Create Pull Request
-
-### Guidelines
-
-- Run `cargo fmt` before committing
-- Run `cargo clippy` and fix warnings
-- Add tests for new features
-- Update documentation as needed
-- Keep commits focused and atomic
+- Keep changes scoped and production-safe for self-hosting.
+- Validate with Fozzy full gate before PR.
+- Avoid introducing cloud-only HTTP/auth/subscription/serverless surface into `quilt-core`.
 
 ## License
 
