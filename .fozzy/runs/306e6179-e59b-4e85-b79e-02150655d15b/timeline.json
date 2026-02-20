@@ -1,0 +1,86 @@
+[
+  {
+    "index": 0,
+    "time_ms": 0,
+    "name": "client_put",
+    "fields": {
+      "key": "x",
+      "node": "n0"
+    }
+  },
+  {
+    "index": 1,
+    "time_ms": 0,
+    "name": "partition",
+    "fields": {
+      "a": "n0",
+      "b": "n1"
+    }
+  },
+  {
+    "index": 2,
+    "time_ms": 0,
+    "name": "client_put",
+    "fields": {
+      "key": "x",
+      "node": "n0"
+    }
+  },
+  {
+    "index": 3,
+    "time_ms": 0,
+    "name": "heal",
+    "fields": {
+      "a": "n0",
+      "b": "n1"
+    }
+  },
+  {
+    "index": 4,
+    "time_ms": 1,
+    "name": "deliver",
+    "fields": {
+      "from": "n0",
+      "id": 1,
+      "key": "x",
+      "kind": "kv_repl",
+      "to": "n1"
+    }
+  },
+  {
+    "index": 5,
+    "time_ms": 2,
+    "name": "deliver",
+    "fields": {
+      "from": "n0",
+      "id": 2,
+      "key": "x",
+      "kind": "kv_repl",
+      "to": "n2"
+    }
+  },
+  {
+    "index": 6,
+    "time_ms": 3,
+    "name": "deliver",
+    "fields": {
+      "from": "n0",
+      "id": 3,
+      "key": "x",
+      "kind": "kv_repl",
+      "to": "n1"
+    }
+  },
+  {
+    "index": 7,
+    "time_ms": 4,
+    "name": "deliver",
+    "fields": {
+      "from": "n0",
+      "id": 4,
+      "key": "x",
+      "kind": "kv_repl",
+      "to": "n2"
+    }
+  }
+]

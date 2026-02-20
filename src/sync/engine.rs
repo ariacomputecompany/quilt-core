@@ -807,6 +807,14 @@ impl SyncEngine {
         self.network_manager.list_allocations(None).await
     }
 
+    pub async fn get_node_subnet_cidr(&self) -> SyncResult<String> {
+        Ok(self.network_manager.get_subnet_cidr().await)
+    }
+
+    pub async fn configure_node_subnet_cidr(&self, subnet_cidr: &str) -> SyncResult<()> {
+        self.network_manager.set_subnet_cidr(subnet_cidr).await
+    }
+
     // === Process Monitoring ===
 
     /// Get process monitor status

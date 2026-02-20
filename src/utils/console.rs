@@ -25,7 +25,7 @@ impl ConsoleLogger {
             LogLevel::Progress => ("🔄", "PROGRESS"),
             LogLevel::Debug => ("🔧", "DEBUG"),
         };
-        
+
         println!("{} {}", emoji, message);
     }
 
@@ -67,7 +67,10 @@ impl ConsoleLogger {
     /// Log container start status
     pub fn container_started(container_id: &str, pid: Option<i32>) {
         if let Some(pid) = pid {
-            Self::success(&format!("Container {} started with PID: {}", container_id, pid));
+            Self::success(&format!(
+                "Container {} started with PID: {}",
+                container_id, pid
+            ));
         } else {
             Self::success(&format!("Container {} started successfully", container_id));
         }
@@ -90,12 +93,20 @@ impl ConsoleLogger {
 
     /// Log package installation
     pub fn package_installing(packages: &[String], manager: &str) {
-        Self::progress(&format!("Installing {} packages: {}", manager, packages.join(", ")));
+        Self::progress(&format!(
+            "Installing {} packages: {}",
+            manager,
+            packages.join(", ")
+        ));
     }
 
     /// Log package installation success
     pub fn package_installed(packages: &[String], manager: &str) {
-        Self::success(&format!("Successfully installed {} packages: {}", manager, packages.join(", ")));
+        Self::success(&format!(
+            "Successfully installed {} packages: {}",
+            manager,
+            packages.join(", ")
+        ));
     }
 
     /// Log runtime installation
@@ -124,12 +135,18 @@ impl ConsoleLogger {
 
     /// Log namespace creation
     pub fn namespace_created(config: &str) {
-        Self::debug(&format!("Creating namespaced process with flags: {}", config));
+        Self::debug(&format!(
+            "Creating namespaced process with flags: {}",
+            config
+        ));
     }
 
     /// Log cgroup creation
     pub fn cgroup_created(container_id: &str, cgroup_version: &str) {
-        Self::debug(&format!("Created {} cgroups for container: {}", cgroup_version, container_id));
+        Self::debug(&format!(
+            "Created {} cgroups for container: {}",
+            cgroup_version, container_id
+        ));
     }
 
     /// Log resource limits being set
@@ -143,10 +160,10 @@ impl ConsoleLogger {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         let datetime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(timestamp);
         let formatted_time = humantime::format_rfc3339_seconds(datetime);
-        
+
         let (emoji, _) = match level {
             LogLevel::Info => ("ℹ️", "INFO"),
             LogLevel::Success => ("✅", "SUCCESS"),
@@ -155,7 +172,7 @@ impl ConsoleLogger {
             LogLevel::Progress => ("🔄", "PROGRESS"),
             LogLevel::Debug => ("🔧", "DEBUG"),
         };
-        
+
         println!("[{}] {} {}", formatted_time, emoji, message);
     }
 
@@ -202,33 +219,35 @@ impl ConsoleLogger {
         println!("   Status: {}", status);
         println!("   Created: {}", created_at);
         println!("   Rootfs: {}", rootfs_path);
-        
+
         if let Some(pid) = pid {
             println!("   PID: {}", pid);
         }
-        
+
         if let Some(ip) = ip_address {
             if !ip.is_empty() && ip != "No IP assigned" {
                 println!("   IP: {}", ip);
             }
         }
-        
+
         if let Some(exit_code) = exit_code {
             if exit_code != 0 || status == "EXITED" {
                 println!("   Exit Code: {}", exit_code);
             }
         }
-        
+
         if !error_message.is_empty() {
             println!("   Error: {}", error_message);
         }
-        
+
         if let Some(memory_bytes) = memory_usage {
             if memory_bytes > 0 {
-                println!("   Memory Usage: {} ({})", 
-                        Self::format_memory(memory_bytes), 
-                        memory_bytes);
+                println!(
+                    "   Memory Usage: {} ({})",
+                    Self::format_memory(memory_bytes),
+                    memory_bytes
+                );
             }
         }
     }
-} 
+}

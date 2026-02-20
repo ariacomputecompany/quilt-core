@@ -1,0 +1,42 @@
+[
+  {
+    "index": 0,
+    "time_ms": 1,
+    "name": "op",
+    "fields": {
+      "opcode": "51"
+    }
+  },
+  {
+    "index": 1,
+    "time_ms": 2,
+    "name": "op",
+    "fields": {
+      "opcode": "95"
+    }
+  },
+  {
+    "index": 2,
+    "time_ms": 3,
+    "name": "op",
+    "fields": {
+      "opcode": "0a"
+    }
+  },
+  {
+    "index": 3,
+    "time_ms": 4,
+    "name": "op",
+    "fields": {
+      "opcode": "32"
+    }
+  },
+  {
+    "index": 4,
+    "time_ms": 5,
+    "name": "op",
+    "fields": {
+      "opcode": "fe"
+    }
+  }
+]

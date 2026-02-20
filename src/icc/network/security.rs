@@ -19,37 +19,56 @@ impl NetworkSecurity {
     /// This prevents nsenter commands from falling back to host execution
     pub fn validate_container_namespace(&self, container_pid: i32) -> bool {
         // Check if PID exists and is a valid container process
-        let pid_check = format!("test -d /proc/{} && cat /proc/{}/comm | grep -q quilt", container_pid, container_pid);
+        let pid_check = format!(
+            "test -d /proc/{} && cat /proc/{}/comm | grep -q quilt",
+            container_pid, container_pid
+        );
         if let Ok(result) = CommandExecutor::execute_shell(&pid_check) {
             if !result.success {
                 ConsoleLogger::warning(&format!("🚨 [SECURITY] Container PID {} validation failed - process not found or invalid", container_pid));
                 return false;
             }
         } else {
-            ConsoleLogger::warning(&format!("🚨 [SECURITY] Container PID {} validation check failed", container_pid));
+            ConsoleLogger::warning(&format!(
+                "🚨 [SECURITY] Container PID {} validation check failed",
+                container_pid
+            ));
             return false;
         }
 
         // Test namespace entry without dangerous operations
-        let ns_test = format!("nsenter -t {} -m -p -- echo 'namespace_test_ok'", container_pid);
+        let ns_test = format!(
+            "nsenter -t {} -m -p -- echo 'namespace_test_ok'",
+            container_pid
+        );
         match CommandExecutor::execute_shell(&ns_test) {
             Ok(result) => {
                 if result.success && result.stdout.trim() == "namespace_test_ok" {
                     return true;
                 } else {
-                    ConsoleLogger::warning(&format!("🚨 [SECURITY] Namespace entry test failed for PID {}: {}", container_pid, result.stderr));
+                    ConsoleLogger::warning(&format!(
+                        "🚨 [SECURITY] Namespace entry test failed for PID {}: {}",
+                        container_pid, result.stderr
+                    ));
                     return false;
                 }
             }
             Err(e) => {
-                ConsoleLogger::warning(&format!("🚨 [SECURITY] Failed to test namespace entry for PID {}: {}", container_pid, e));
+                ConsoleLogger::warning(&format!(
+                    "🚨 [SECURITY] Failed to test namespace entry for PID {}: {}",
+                    container_pid, e
+                ));
                 return false;
             }
         }
     }
 
     /// SECURITY CRITICAL: Verify DNS changes only affected container, not host
-    pub fn verify_dns_container_isolation(&self, container_pid: i32, _expected_content: &str) -> bool {
+    pub fn verify_dns_container_isolation(
+        &self,
+        container_pid: i32,
+        _expected_content: &str,
+    ) -> bool {
         // Check host DNS was not modified
         if let Ok(host_resolv) = FileSystemUtils::read_file("/etc/resolv.conf") {
             if host_resolv.contains(&self.bridge_ip.to_string()) {
@@ -65,8 +84,11 @@ impl NetworkSecurity {
                 return true;
             }
         }
-        
-        ConsoleLogger::warning(&format!("🚨 [SECURITY] Could not verify container DNS isolation for PID {}", container_pid));
+
+        ConsoleLogger::warning(&format!(
+            "🚨 [SECURITY] Could not verify container DNS isolation for PID {}",
+            container_pid
+        ));
         false
     }
 
@@ -79,14 +101,23 @@ impl NetworkSecurity {
 
         // Additional validation: ensure no path traversal attempts
         if rootfs_path.contains("../") || rootfs_path.contains("/..") {
-            return Err(format!("🚨 [SECURITY] Path traversal attempt detected: {}", rootfs_path));
+            return Err(format!(
+                "🚨 [SECURITY] Path traversal attempt detected: {}",
+                rootfs_path
+            ));
         }
 
         // Check that the path actually exists and is a directory
         match std::fs::metadata(rootfs_path) {
             Ok(metadata) if metadata.is_dir() => Ok(()),
-            Ok(_) => Err(format!("🚨 [SECURITY] Rootfs path is not a directory: {}", rootfs_path)),
-            Err(e) => Err(format!("🚨 [SECURITY] Cannot access rootfs path {}: {}", rootfs_path, e)),
+            Ok(_) => Err(format!(
+                "🚨 [SECURITY] Rootfs path is not a directory: {}",
+                rootfs_path
+            )),
+            Err(e) => Err(format!(
+                "🚨 [SECURITY] Cannot access rootfs path {}: {}",
+                rootfs_path, e
+            )),
         }
     }
 
@@ -98,12 +129,21 @@ impl NetworkSecurity {
         }
 
         if container_id.len() > 64 {
-            return Err(format!("🚨 [SECURITY] Container ID too long: {}", container_id.len()));
+            return Err(format!(
+                "🚨 [SECURITY] Container ID too long: {}",
+                container_id.len()
+            ));
         }
 
         // Allow alphanumeric characters and hyphens only
-        if !container_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-            return Err(format!("🚨 [SECURITY] Container ID contains invalid characters: {}", container_id));
+        if !container_id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(format!(
+                "🚨 [SECURITY] Container ID contains invalid characters: {}",
+                container_id
+            ));
         }
 
         Ok(())
@@ -115,13 +155,20 @@ impl NetworkSecurity {
             return Err("🚨 [SECURITY] Interface name cannot be empty".to_string());
         }
 
-        if interface_name.len() > 15 {  // Linux interface name limit
-            return Err(format!("🚨 [SECURITY] Interface name too long: {}", interface_name));
+        if interface_name.len() > 15 {
+            // Linux interface name limit
+            return Err(format!(
+                "🚨 [SECURITY] Interface name too long: {}",
+                interface_name
+            ));
         }
 
         // Interface names should be alphanumeric
         if !interface_name.chars().all(|c| c.is_alphanumeric()) {
-            return Err(format!("🚨 [SECURITY] Interface name contains invalid characters: {}", interface_name));
+            return Err(format!(
+                "🚨 [SECURITY] Interface name contains invalid characters: {}",
+                interface_name
+            ));
         }
 
         Ok(())
@@ -132,7 +179,10 @@ impl NetworkSecurity {
         // Basic IP address format validation
         match ip_address.parse::<std::net::Ipv4Addr>() {
             Ok(_) => Ok(()),
-            Err(_) => Err(format!("🚨 [SECURITY] Invalid IP address format: {}", ip_address)),
+            Err(_) => Err(format!(
+                "🚨 [SECURITY] Invalid IP address format: {}",
+                ip_address
+            )),
         }
     }
 
@@ -142,7 +192,8 @@ impl NetworkSecurity {
             return Err(format!("🚨 [SECURITY] Invalid PID: {}", pid));
         }
 
-        if pid > 4194304 {  // Linux PID_MAX_LIMIT
+        if pid > 4194304 {
+            // Linux PID_MAX_LIMIT
             return Err(format!("🚨 [SECURITY] PID too large: {}", pid));
         }
 
@@ -166,13 +217,15 @@ impl NetworkSecurity {
     pub fn validate_safe_command(&self, command: &str) -> Result<(), String> {
         // Check for common injection patterns
         let dangerous_patterns = vec![
-            ";", "&&", "||", "|", "`", "$", "$(", "${",
-            "rm ", "dd ", "> ", ">>", "< ", "<<",
+            ";", "&&", "||", "|", "`", "$", "$(", "${", "rm ", "dd ", "> ", ">>", "< ", "<<",
         ];
 
         for pattern in dangerous_patterns {
             if command.contains(pattern) {
-                return Err(format!("🚨 [SECURITY] Command contains dangerous pattern '{}': {}", pattern, command));
+                return Err(format!(
+                    "🚨 [SECURITY] Command contains dangerous pattern '{}': {}",
+                    pattern, command
+                ));
             }
         }
 
@@ -185,9 +238,11 @@ impl NetworkSecurity {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
-        ConsoleLogger::info(&format!("🔒 [SECURITY-AUDIT] {} | Container: {} | {} | Time: {}", 
-            operation, container_id, details, timestamp));
+
+        ConsoleLogger::info(&format!(
+            "🔒 [SECURITY-AUDIT] {} | Container: {} | {} | Time: {}",
+            operation, container_id, details, timestamp
+        ));
     }
 
     /// SECURITY CRITICAL: Check for resource exhaustion attacks
@@ -196,14 +251,25 @@ impl NetworkSecurity {
         let interface_count_cmd = format!("ip link show | grep -c 'quilt.*@'");
         if let Ok(result) = CommandExecutor::execute_shell(&interface_count_cmd) {
             if let Ok(count) = result.stdout.trim().parse::<u32>() {
-                if count > 1000 {  // Reasonable limit
-                    ConsoleLogger::warning(&format!("🚨 [SECURITY] High interface count detected: {}", count));
-                    return Err(format!("🚨 [SECURITY] Too many network interfaces: {}", count));
+                if count > 1000 {
+                    // Reasonable limit
+                    ConsoleLogger::warning(&format!(
+                        "🚨 [SECURITY] High interface count detected: {}",
+                        count
+                    ));
+                    return Err(format!(
+                        "🚨 [SECURITY] Too many network interfaces: {}",
+                        count
+                    ));
                 }
             }
         }
 
-        self.audit_network_operation("RESOURCE_CHECK", container_id, &format!("Resource limits validated"));
+        self.audit_network_operation(
+            "RESOURCE_CHECK",
+            container_id,
+            &format!("Resource limits validated"),
+        );
         Ok(())
     }
 
@@ -214,7 +280,11 @@ impl NetworkSecurity {
         match CommandExecutor::execute_shell(&default_route_cmd) {
             Ok(result) if result.success => {
                 if result.stdout.contains(bridge_name) {
-                    return Err(format!("🚨 [SECURITY] Bridge {} appears in default route: {}", bridge_name, result.stdout.trim()));
+                    return Err(format!(
+                        "🚨 [SECURITY] Bridge {} appears in default route: {}",
+                        bridge_name,
+                        result.stdout.trim()
+                    ));
                 }
             }
             _ => {
@@ -228,8 +298,16 @@ impl NetworkSecurity {
             Ok(result) if result.success => {
                 // This is just informational - we log any routes involving our bridge
                 if result.stdout.contains(bridge_name) {
-                    ConsoleLogger::debug(&format!("ℹ️ [SECURITY] Bridge {} found in main routing table (may be normal): {}", 
-                        bridge_name, result.stdout.lines().filter(|line| line.contains(bridge_name)).collect::<Vec<_>>().join(" | ")));
+                    ConsoleLogger::debug(&format!(
+                        "ℹ️ [SECURITY] Bridge {} found in main routing table (may be normal): {}",
+                        bridge_name,
+                        result
+                            .stdout
+                            .lines()
+                            .filter(|line| line.contains(bridge_name))
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    ));
                 }
             }
             _ => {

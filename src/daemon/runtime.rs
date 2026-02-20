@@ -1,33 +1,34 @@
-use crate::daemon::namespace::{NamespaceManager, NamespaceConfig};
-use crate::daemon::cgroup::{CgroupManager, CgroupLimits};
+use crate::daemon::cgroup::{CgroupLimits, CgroupManager};
 use crate::daemon::manager::RuntimeManager;
-use crate::daemon::readiness::{ContainerReadinessManager, ReadinessConfig, cleanup_readiness_signal};
-use crate::utils::console::ConsoleLogger;
-use crate::utils::process::ProcessUtils;
-use crate::utils::filesystem::FileSystemUtils;
-use crate::utils::command::CommandExecutor;
-use crate::icc::network::{ContainerNetworkConfig, NetworkManager};
-use crate::icc::network::security::NetworkSecurity;
-use crate::sync::ContainerState;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::process::Command;
-use std::fs;
-use std::path::Path;
-use flate2::read::GzDecoder;
-use tar::Archive;
-use nix::unistd::{chroot, chdir, Pid, execv};
-use std::os::unix::fs::PermissionsExt;
-use std::ffi::CString;
+use crate::daemon::namespace::{NamespaceConfig, NamespaceManager};
+use crate::daemon::readiness::{
+    cleanup_readiness_signal, ContainerReadinessManager, ReadinessConfig,
+};
 use crate::daemon::resource::ResourceManager;
-
+use crate::icc::network::security::NetworkSecurity;
+use crate::icc::network::{ContainerNetworkConfig, NetworkManager};
+use crate::sync::ContainerState;
+use crate::utils::command::CommandExecutor;
+use crate::utils::console::ConsoleLogger;
+use crate::utils::filesystem::FileSystemUtils;
+use crate::utils::process::ProcessUtils;
+use flate2::read::GzDecoder;
+use nix::unistd::{chdir, chroot, execv, Pid};
+use std::collections::HashMap;
+use std::ffi::CString;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::Command;
+use std::sync::Arc;
+use tar::Archive;
 
 #[derive(Debug, Clone)]
 pub struct ContainerConfig {
     pub image_path: String,
     pub command: Vec<String>,
     pub environment: HashMap<String, String>,
-    pub setup_commands: Vec<String>,  // Setup commands specification
+    pub setup_commands: Vec<String>, // Setup commands specification
     pub resource_limits: Option<CgroupLimits>,
     pub namespace_config: Option<NamespaceConfig>,
     #[allow(dead_code)]
@@ -141,7 +142,7 @@ impl ContainerRuntime {
 
     pub fn create_container(&self, id: String, config: ContainerConfig) -> Result<(), String> {
         ConsoleLogger::progress(&format!("Creating container: {}", id));
-        
+
         let container = Container::new(id.clone(), config);
         let rootfs_path = container.rootfs_path.clone();
 
@@ -162,17 +163,20 @@ impl ContainerRuntime {
             }
             return Err(e);
         }
-        
+
         // Verify rootfs was actually created and has content
         if !std::path::Path::new(&rootfs_path).exists() {
-            ConsoleLogger::error(&format!("Rootfs path {} was not created after setup", rootfs_path));
+            ConsoleLogger::error(&format!(
+                "Rootfs path {} was not created after setup",
+                rootfs_path
+            ));
             if let Ok(mut containers) = self.containers.try_lock() {
                 containers.remove(&id);
             }
             return Err(format!("Rootfs creation failed for container {}", id));
         }
-        
-        // Check if rootfs has any content  
+
+        // Check if rootfs has any content
         let entries = FileSystemUtils::list_dir(&rootfs_path)
             .map_err(|e| format!("Failed to read rootfs directory: {}", e))?;
         if entries.is_empty() {
@@ -186,35 +190,50 @@ impl ContainerRuntime {
         self.update_container_state(&id, ContainerState::Starting);
 
         ConsoleLogger::container_created(&id);
-        ConsoleLogger::success(&format!("Container {} created with rootfs at {}", id, rootfs_path));
+        ConsoleLogger::success(&format!(
+            "Container {} created with rootfs at {}",
+            id, rootfs_path
+        ));
         Ok(())
     }
-    
-    pub fn register_existing_container(&self, id: String, config: ContainerConfig, rootfs_path: String) -> Result<(), String> {
+
+    pub fn register_existing_container(
+        &self,
+        id: String,
+        config: ContainerConfig,
+        rootfs_path: String,
+    ) -> Result<(), String> {
         ConsoleLogger::progress(&format!("Registering existing container: {}", id));
-        
+
         // Verify rootfs exists before creating container
         if !std::path::Path::new(&rootfs_path).exists() {
             return Err(format!("Rootfs path {} does not exist", rootfs_path));
         }
-        
+
         let mut container = Container::new(id.clone(), config);
         container.rootfs_path = rootfs_path.clone();
-        
+
         // Lock-free container insertion
         if let Ok(mut containers) = self.containers.try_lock() {
             containers.insert(id.clone(), container);
         } else {
             return Err(format!("Failed to lock containers for insertion of {}", id));
         }
-        
+
         self.update_container_state(&id, ContainerState::Starting);
-        
-        ConsoleLogger::debug(&format!("Registered existing container {} with rootfs {}", id, rootfs_path));
+
+        ConsoleLogger::debug(&format!(
+            "Registered existing container {} with rootfs {}",
+            id, rootfs_path
+        ));
         Ok(())
     }
 
-    pub fn start_container(&self, id: &str, network_config: Option<ContainerNetworkConfig>) -> Result<(), String> {
+    pub fn start_container(
+        &self,
+        id: &str,
+        network_config: Option<ContainerNetworkConfig>,
+    ) -> Result<(), String> {
         ConsoleLogger::progress(&format!("[START] Starting container: {}", id));
 
         // Get container configuration (lock-free read)
@@ -266,21 +285,26 @@ impl ContainerRuntime {
 
         // Create namespaced process for container execution
         let namespace_config = config.namespace_config.unwrap_or_default();
-        
+
         // Reduce memory footprint - prepare everything needed outside the closure
         let id_for_logs = id.to_string();
         let command_for_logs = format!("{:?}", config.command);
-        
+
         // Add log entry (per-container lock)
         if let Ok(mut containers) = self.containers.try_lock() {
             if let Some(container) = containers.get_mut(id) {
-                container.add_log(format!("Starting container execution with command: {}", command_for_logs));
+                container.add_log(format!(
+                    "Starting container execution with command: {}",
+                    command_for_logs
+                ));
             }
         }
-        
+
         // Prepare all data needed by child process (avoid heavy captures)
         // ENHANCED: Inject readiness check into command
-        let enhanced_command = self.readiness_manager.inject_readiness_into_command(id, config.command.clone());
+        let enhanced_command = self
+            .readiness_manager
+            .inject_readiness_into_command(id, config.command.clone());
         let command_clone = enhanced_command;
         let environment_clone = config.environment.clone();
         let rootfs_path_clone = rootfs_path.clone();
@@ -292,18 +316,23 @@ impl ContainerRuntime {
         let child_func = move || -> i32 {
             // This runs in the child process with new namespaces
             // Keep memory allocation to minimum in child process
-            
+
             // Setup mount namespace
             let namespace_manager = NamespaceManager::new();
             if let Err(e) = namespace_manager.setup_mount_namespace(&rootfs_path_clone) {
                 eprintln!("Failed to setup mount namespace: {}", e);
                 return 1;
             }
-            
+
             // Setup container mounts (volumes, bind mounts, tmpfs)
             if !mounts_clone.is_empty() {
-                println!("DEBUG: Setting up {} mounts before chroot", mounts_clone.len());
-                if let Err(e) = namespace_manager.setup_container_mounts(&rootfs_path_clone, &mounts_clone) {
+                println!(
+                    "DEBUG: Setting up {} mounts before chroot",
+                    mounts_clone.len()
+                );
+                if let Err(e) =
+                    namespace_manager.setup_container_mounts(&rootfs_path_clone, &mounts_clone)
+                {
                     eprintln!("Failed to setup container mounts: {}", e);
                     // Non-fatal, continue - container can run without extra mounts
                 } else {
@@ -339,23 +368,25 @@ impl ContainerRuntime {
                 eprintln!("Failed to chdir to /: {}", e);
                 return 1;
             }
-            
+
             // NOW wait for network configuration AFTER chroot if networking is enabled
             if network_enabled {
                 // Ensure /tmp exists in container
                 if !FileSystemUtils::exists("/tmp") {
                     println!("Creating /tmp directory in container");
-                    if let Err(e) = FileSystemUtils::create_dir_all_with_logging("/tmp", "container /tmp") {
+                    if let Err(e) =
+                        FileSystemUtils::create_dir_all_with_logging("/tmp", "container /tmp")
+                    {
                         eprintln!("Failed to create /tmp in container: {}", e);
                         // Try to continue anyway
                     }
                 }
-                
+
                 println!("Waiting for network configuration from parent process...");
                 let network_ready_path = format!("/tmp/quilt-network-ready-{}", id_for_logs);
                 let start_time = std::time::Instant::now();
                 let timeout = std::time::Duration::from_secs(60);
-                
+
                 loop {
                     if std::path::Path::new(&network_ready_path).exists() {
                         println!("Network configuration ready, proceeding...");
@@ -363,17 +394,17 @@ impl ContainerRuntime {
                         let _ = FileSystemUtils::remove_path(&network_ready_path);
                         break;
                     }
-                    
+
                     if start_time.elapsed() > timeout {
                         eprintln!("Timeout waiting for network configuration");
                         eprintln!("Expected signal file: {}", network_ready_path);
                         return 1;
                     }
-                    
+
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
             }
-            
+
             println!("DEBUG: After chroot, checking /mnt:");
             if let Ok(entries) = std::fs::read_dir("/mnt") {
                 for entry in entries {
@@ -394,7 +425,11 @@ impl ContainerRuntime {
 
             // Execute setup commands inside the container
             if !setup_commands_clone.is_empty() {
-                println!("Executing {} setup commands in container {}", setup_commands_clone.len(), id_for_logs);
+                println!(
+                    "Executing {} setup commands in container {}",
+                    setup_commands_clone.len(),
+                    id_for_logs
+                );
                 if let Err(e) = runtime_manager.execute_setup_commands(&setup_commands_clone) {
                     eprintln!("Setup commands failed: {}", e);
                     return 1;
@@ -408,7 +443,7 @@ impl ContainerRuntime {
 
             // Execute the main command with reduced memory overhead
             println!("Executing main command in container: {:?}", command_clone);
-            
+
             // Verify shell exists and find appropriate shell
             println!("DEBUG: Looking for shell in container...");
             let shell_path = if std::path::Path::new("/bin/sh").exists() {
@@ -444,22 +479,29 @@ impl ContainerRuntime {
                 }
                 return 1;
             };
-            
+
             println!("Using shell: {}", shell_path);
-            
+
             // Simple command execution - no detection, no overhead
-            let (final_program, final_args) = if command_clone.len() >= 3 
-                && (command_clone[0] == "/bin/sh" || command_clone[0] == "/bin/bash" || 
-                    command_clone[0] == "/usr/bin/sh" || command_clone[0] == "/usr/bin/bash" ||
-                    command_clone[0].ends_with("/sh") || command_clone[0].ends_with("/bash"))
-                && command_clone[1] == "-c" {
+            let (final_program, final_args) = if command_clone.len() >= 3
+                && (command_clone[0] == "/bin/sh"
+                    || command_clone[0] == "/bin/bash"
+                    || command_clone[0] == "/usr/bin/sh"
+                    || command_clone[0] == "/usr/bin/bash"
+                    || command_clone[0].ends_with("/sh")
+                    || command_clone[0].ends_with("/bash"))
+                && command_clone[1] == "-c"
+            {
                 // Already a shell command - use as-is
                 println!("Command already wrapped in shell: {:?}", command_clone);
                 (command_clone[0].clone(), command_clone[1..].to_vec())
             } else if command_clone.len() == 1 {
                 // Single command - execute through shell
                 println!("Wrapping single command in shell: {:?}", command_clone);
-                (shell_path.to_string(), vec!["-c".to_string(), command_clone[0].clone()])
+                (
+                    shell_path.to_string(),
+                    vec!["-c".to_string(), command_clone[0].clone()],
+                )
             } else {
                 // Multiple arguments - execute directly without shell
                 println!("Executing command directly: {:?}", command_clone);
@@ -472,9 +514,10 @@ impl ContainerRuntime {
                 eprintln!("🚨 [SECURITY] Command validation failed: {}", e);
                 return 1;
             }
-            
+
             // SECURITY: Sanitize all arguments
-            let sanitized_args: Vec<String> = final_args.iter()
+            let sanitized_args: Vec<String> = final_args
+                .iter()
                 .map(|arg| security.sanitize_shell_argument(arg))
                 .collect();
 
@@ -486,34 +529,49 @@ impl ContainerRuntime {
                     return 1;
                 }
             };
-                    
+
             // Prepare all arguments as CStrings with proper lifetime management
             let mut all_args = vec![final_program];
             all_args.extend(sanitized_args);
-            
-            let args_cstrings: Vec<CString> = match all_args.iter()
+
+            let args_cstrings: Vec<CString> = match all_args
+                .iter()
                 .map(|s| CString::new(s.clone()))
-                .collect::<Result<Vec<CString>, _>>() {
+                .collect::<Result<Vec<CString>, _>>()
+            {
                 Ok(cstrings) => cstrings,
                 Err(e) => {
                     eprintln!("Failed to prepare command arguments: {}", e);
                     return 1;
-                            }
+                }
             };
 
             // Create references with proper lifetime (after cstrings is owned)
             let arg_refs: Vec<&CString> = args_cstrings.iter().collect();
 
             // Direct exec without nested fork - this replaces the current process
-            println!("Executing: {} {:?}", program_cstring.to_string_lossy(), 
-                     arg_refs.iter().map(|cs| cs.to_string_lossy()).collect::<Vec<_>>());
-            
+            println!(
+                "Executing: {} {:?}",
+                program_cstring.to_string_lossy(),
+                arg_refs
+                    .iter()
+                    .map(|cs| cs.to_string_lossy())
+                    .collect::<Vec<_>>()
+            );
+
             // Log the actual command details for debugging
             let exec_start = std::time::SystemTime::now();
             println!("🕐 [EXEC] Command execution started at: {:?}", exec_start);
-            println!("🕐 [EXEC] Full command: {} {}", program_cstring.to_string_lossy(), 
-                     arg_refs[1..].iter().map(|cs| cs.to_string_lossy()).collect::<Vec<_>>().join(" "));
-            
+            println!(
+                "🕐 [EXEC] Full command: {} {}",
+                program_cstring.to_string_lossy(),
+                arg_refs[1..]
+                    .iter()
+                    .map(|cs| cs.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+
             // This will replace the current process entirely
             match execv(&program_cstring, &arg_refs) {
                 Ok(_) => {
@@ -528,10 +586,16 @@ impl ContainerRuntime {
         };
 
         // Create the namespaced process
-        match self.namespace_manager.create_namespaced_process(&namespace_config, child_func) {
+        match self
+            .namespace_manager
+            .create_namespaced_process(&namespace_config, child_func)
+        {
             Ok(pid) => {
-                ConsoleLogger::debug(&format!("🚀 Container process created, PID: {} - verifying readiness...", ProcessUtils::pid_to_i32(pid)));
-                
+                ConsoleLogger::debug(&format!(
+                    "🚀 Container process created, PID: {} - verifying readiness...",
+                    ProcessUtils::pid_to_i32(pid)
+                ));
+
                 // Add process to cgroups
                 if let Err(e) = cgroup_manager.add_process(pid) {
                     ConsoleLogger::warning(&format!("Failed to add process to cgroups: {}", e));
@@ -547,25 +611,42 @@ impl ContainerRuntime {
                 // First verify the process actually started
                 // EVENT-DRIVEN: Just check immediately, no sleep
                 if !ProcessUtils::is_process_running(pid) {
-                    ConsoleLogger::error(&format!("Container {} process {} died immediately after starting", id, ProcessUtils::pid_to_i32(pid)));
+                    ConsoleLogger::error(&format!(
+                        "Container {} process {} died immediately after starting",
+                        id,
+                        ProcessUtils::pid_to_i32(pid)
+                    ));
                     self.update_container_state(id, ContainerState::Error);
                     return Err(format!("Container {} process died immediately", id));
                 }
-                
+
                 // ✅ CRITICAL: Event-driven readiness verification - NO POLLING
-                match self.readiness_manager.wait_for_container_ready(id, pid, &rootfs_path) {
+                match self
+                    .readiness_manager
+                    .wait_for_container_ready(id, pid, &rootfs_path)
+                {
                     Ok(()) => {
                         // Double-check process is still alive after readiness check
                         if !ProcessUtils::is_process_running(pid) {
-                            ConsoleLogger::error(&format!("Container {} process {} died during readiness check", id, ProcessUtils::pid_to_i32(pid)));
+                            ConsoleLogger::error(&format!(
+                                "Container {} process {} died during readiness check",
+                                id,
+                                ProcessUtils::pid_to_i32(pid)
+                            ));
                             self.update_container_state(id, ContainerState::Error);
-                            return Err(format!("Container {} process died during readiness check", id));
+                            return Err(format!(
+                                "Container {} process died during readiness check",
+                                id
+                            ));
                         }
-                        
+
                         // Now container is truly ready
                         ConsoleLogger::container_started(id, Some(ProcessUtils::pid_to_i32(pid)));
-                        
-                        ConsoleLogger::debug(&format!("[START] Locking containers map to update state for {}", id));
+
+                        ConsoleLogger::debug(&format!(
+                            "[START] Locking containers map to update state for {}",
+                            id
+                        ));
                         // Update container state using lock-free concurrent operations
                         if let Ok(mut containers) = self.containers.try_lock() {
                             if let Some(container) = containers.get_mut(id) {
@@ -574,16 +655,25 @@ impl ContainerRuntime {
                                 container.add_log(format!("Container started with PID: {} and verified ready (event-driven)", pid));
                             }
                         }
-                        ConsoleLogger::debug(&format!("[START] Unlocked containers map for {}", id));
+                        ConsoleLogger::debug(&format!(
+                            "[START] Unlocked containers map for {}",
+                            id
+                        ));
                     }
                     Err(e) => {
-                        ConsoleLogger::error(&format!("Container {} failed event-driven readiness check: {}", id, e));
+                        ConsoleLogger::error(&format!(
+                            "Container {} failed event-driven readiness check: {}",
+                            id, e
+                        ));
                         // Kill the process since it's not working properly
                         let _ = ProcessUtils::terminate_process(pid, 2);
                         // Clean up readiness signal
                         cleanup_readiness_signal(id);
                         self.update_container_state(id, ContainerState::Error);
-                        return Err(format!("Container {} failed to become ready (event-driven): {}", id, e));
+                        return Err(format!(
+                            "Container {} failed to become ready (event-driven): {}",
+                            id, e
+                        ));
                     }
                 }
 
@@ -592,24 +682,38 @@ impl ContainerRuntime {
                 let start_time = std::time::SystemTime::now();
                 let containers_ref = self.containers.clone(); // Clone the Arc for the task
                 let _resource_manager = ResourceManager::global();
-                
+
                 // ✅ CRITICAL FIX: Use a JoinHandle to manage the task lifecycle
                 let wait_task = tokio::spawn(async move {
-                    ConsoleLogger::debug(&format!("🕐 [TIMING] Started waiting for process {} at {:?}", ProcessUtils::pid_to_i32(pid), start_time));
-                    
-                    let exit_code = match NamespaceManager::new().wait_for_process_async(pid).await {
+                    ConsoleLogger::debug(&format!(
+                        "🕐 [TIMING] Started waiting for process {} at {:?}",
+                        ProcessUtils::pid_to_i32(pid),
+                        start_time
+                    ));
+
+                    let exit_code = match NamespaceManager::new().wait_for_process_async(pid).await
+                    {
                         Ok(exit_code) => {
                             let elapsed = start_time.elapsed().unwrap_or_default();
-                            ConsoleLogger::success(&format!("Container {} exited with code: {} after {:?}", id_clone, exit_code, elapsed));
+                            ConsoleLogger::success(&format!(
+                                "Container {} exited with code: {} after {:?}",
+                                id_clone, exit_code, elapsed
+                            ));
                             if elapsed.as_secs() < 10 {
-                                ConsoleLogger::warning(&format!("⚠️ Container {} exited suspiciously quickly (in {:?})", id_clone, elapsed));
+                                ConsoleLogger::warning(&format!(
+                                    "⚠️ Container {} exited suspiciously quickly (in {:?})",
+                                    id_clone, elapsed
+                                ));
                             }
                             Some(exit_code)
                         }
                         Err(e) => {
                             let elapsed = start_time.elapsed().unwrap_or_default();
                             ConsoleLogger::container_failed(&id_clone, &e);
-                            ConsoleLogger::warning(&format!("Process wait failed after {:?}", elapsed));
+                            ConsoleLogger::warning(&format!(
+                                "Process wait failed after {:?}",
+                                elapsed
+                            ));
                             None
                         }
                     };
@@ -628,14 +732,20 @@ impl ContainerRuntime {
                     }
 
                     // Don't cleanup resources on exit - container can be restarted
-                    ConsoleLogger::debug(&format!("Container {} exited, resources preserved for restart", id_clone));
-                    
-                    ConsoleLogger::debug(&format!("✅ Container {} monitoring task completed", id_clone));
+                    ConsoleLogger::debug(&format!(
+                        "Container {} exited, resources preserved for restart",
+                        id_clone
+                    ));
+
+                    ConsoleLogger::debug(&format!(
+                        "✅ Container {} monitoring task completed",
+                        id_clone
+                    ));
                 });
 
                 // Store the task handle in container metadata for later cleanup if needed
                 // For now, we'll let it run to completion since it cleans up after itself
-                
+
                 // Update container state to store the monitoring task
                 if let Ok(mut containers) = self.containers.try_lock() {
                     if let Some(container) = containers.get_mut(id) {
@@ -667,19 +777,22 @@ impl ContainerRuntime {
         // Extract image to simple rootfs directory
         if std::path::Path::new(&image_path).is_file() {
             let rootfs_path = format!("/tmp/quilt-containers/{}", container_id);
-            
+
             // Create the directory first using FileSystemUtils
             FileSystemUtils::create_dir_all_with_logging(&rootfs_path, "container rootfs")?;
-            
+
             // Extract the image
             if let Err(e) = self.extract_image(&image_path, &rootfs_path) {
                 return Err(format!("Failed to extract container image: {}", e));
             }
-            
+
             // Fix broken symlinks and ensure working binaries
             self.fix_container_binaries(&rootfs_path)?;
-            
-            ConsoleLogger::success(&format!("Rootfs setup completed for container {}", container_id));
+
+            ConsoleLogger::success(&format!(
+                "Rootfs setup completed for container {}",
+                container_id
+            ));
             Ok(())
         } else {
             Err(format!("Image file not found: {}", image_path))
@@ -710,18 +823,24 @@ impl ContainerRuntime {
         // Now fix broken binaries (shell will use busybox if available)
         for (binary_name, host_paths) in essential_binaries {
             let container_binary_path = format!("{}/bin/{}", rootfs_path, binary_name);
-            
+
             // Check if the binary exists and works in the container
             if FileSystemUtils::is_file(&container_binary_path) {
                 // Check if it's a broken symlink
                 if FileSystemUtils::is_broken_symlink(&container_binary_path) {
-                    ConsoleLogger::warning(&format!("Broken symlink found for {}: {}", binary_name, container_binary_path));
-                        self.fix_broken_binary(&container_binary_path, binary_name, &host_paths)?;
+                    ConsoleLogger::warning(&format!(
+                        "Broken symlink found for {}: {}",
+                        binary_name, container_binary_path
+                    ));
+                    self.fix_broken_binary(&container_binary_path, binary_name, &host_paths)?;
                 } else if !FileSystemUtils::is_executable(&container_binary_path) {
                     ConsoleLogger::warning(&format!("Binary {} is not executable", binary_name));
-                            self.fix_broken_binary(&container_binary_path, binary_name, &host_paths)?;
-                        } else {
-                    ConsoleLogger::debug(&format!("Binary {} exists and is executable", binary_name));
+                    self.fix_broken_binary(&container_binary_path, binary_name, &host_paths)?;
+                } else {
+                    ConsoleLogger::debug(&format!(
+                        "Binary {} exists and is executable",
+                        binary_name
+                    ));
                 }
             } else {
                 ConsoleLogger::warning(&format!("Missing binary: {}", binary_name));
@@ -745,8 +864,12 @@ impl ContainerRuntime {
         ];
 
         for dir in lib_dirs {
-            if let Err(e) = FileSystemUtils::create_dir_all_with_logging(&dir, "library directory") {
-                ConsoleLogger::warning(&format!("Failed to create library directory {}: {}", dir, e));
+            if let Err(e) = FileSystemUtils::create_dir_all_with_logging(&dir, "library directory")
+            {
+                ConsoleLogger::warning(&format!(
+                    "Failed to create library directory {}: {}",
+                    dir, e
+                ));
             }
         }
 
@@ -756,10 +879,19 @@ impl ContainerRuntime {
     /// Copy essential libraries needed by binaries
     fn copy_essential_libraries(&self, rootfs_path: &str) -> Result<(), String> {
         let essential_libs = vec![
-            ("/lib/x86_64-linux-gnu/libc.so.6", "lib/x86_64-linux-gnu/libc.so.6"),
+            (
+                "/lib/x86_64-linux-gnu/libc.so.6",
+                "lib/x86_64-linux-gnu/libc.so.6",
+            ),
             ("/lib64/ld-linux-x86-64.so.2", "lib64/ld-linux-x86-64.so.2"),
-            ("/lib/x86_64-linux-gnu/libtinfo.so.6", "lib/x86_64-linux-gnu/libtinfo.so.6"),
-            ("/lib/x86_64-linux-gnu/libdl.so.2", "lib/x86_64-linux-gnu/libdl.so.2"),
+            (
+                "/lib/x86_64-linux-gnu/libtinfo.so.6",
+                "lib/x86_64-linux-gnu/libtinfo.so.6",
+            ),
+            (
+                "/lib/x86_64-linux-gnu/libdl.so.2",
+                "lib/x86_64-linux-gnu/libdl.so.2",
+            ),
         ];
 
         for (host_lib, container_lib) in essential_libs {
@@ -767,10 +899,16 @@ impl ContainerRuntime {
                 let container_lib_path = format!("{}/{}", rootfs_path, container_lib);
                 match FileSystemUtils::copy_file(host_lib, &container_lib_path) {
                     Ok(_) => {
-                        ConsoleLogger::debug(&format!("Copied essential library: {}", container_lib));
+                        ConsoleLogger::debug(&format!(
+                            "Copied essential library: {}",
+                            container_lib
+                        ));
                     }
                     Err(e) => {
-                        ConsoleLogger::warning(&format!("Failed to copy library {}: {}", host_lib, e));
+                        ConsoleLogger::warning(&format!(
+                            "Failed to copy library {}: {}",
+                            host_lib, e
+                        ));
                         continue;
                     }
                 }
@@ -781,7 +919,12 @@ impl ContainerRuntime {
     }
 
     /// Fix a broken or missing binary by copying from host
-    fn fix_broken_binary(&self, container_binary_path: &str, binary_name: &str, host_paths: &[&str]) -> Result<(), String> {
+    fn fix_broken_binary(
+        &self,
+        container_binary_path: &str,
+        binary_name: &str,
+        host_paths: &[&str],
+    ) -> Result<(), String> {
         ConsoleLogger::debug(&format!("Fixing broken binary: {}", binary_name));
 
         // Remove the broken binary if it exists
@@ -800,26 +943,35 @@ impl ContainerRuntime {
 
                 // Copy the working binary
                 match FileSystemUtils::copy_file(host_path, container_binary_path) {
-                            Ok(_) => {
+                    Ok(_) => {
                         // Make it executable
                         FileSystemUtils::make_executable(container_binary_path)?;
-                        ConsoleLogger::success(&format!("Fixed binary {} by copying from {}", binary_name, host_path));
-                                return Ok(());
-                            }
-                            Err(e) => {
-                        ConsoleLogger::warning(&format!("Failed to copy {} from {}: {}", binary_name, host_path, e));
-                                continue;
-                            }
-                        }
+                        ConsoleLogger::success(&format!(
+                            "Fixed binary {} by copying from {}",
+                            binary_name, host_path
+                        ));
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        ConsoleLogger::warning(&format!(
+                            "Failed to copy {} from {}: {}",
+                            binary_name, host_path, e
+                        ));
+                        continue;
                     }
                 }
+            }
+        }
 
         // If no suitable host binary found, try to use busybox
         if binary_name == "sh" {
             ConsoleLogger::progress("Creating shell symlink to busybox");
-            
+
             // Check if busybox is already installed
-            let busybox_path = format!("{}/busybox", container_binary_path.rsplit_once('/').unwrap().0);
+            let busybox_path = format!(
+                "{}/busybox",
+                container_binary_path.rsplit_once('/').unwrap().0
+            );
             if FileSystemUtils::is_file(&busybox_path) {
                 // Create symlink to busybox with absolute path
                 let _ = std::fs::remove_file(container_binary_path);
@@ -828,11 +980,15 @@ impl ContainerRuntime {
                     // Fall back to custom shell if symlink fails
                     return self.create_robust_shell(container_binary_path);
                 } else {
-                    ConsoleLogger::success("Created shell symlink to busybox (/bin/sh -> /bin/busybox)");
+                    ConsoleLogger::success(
+                        "Created shell symlink to busybox (/bin/sh -> /bin/busybox)",
+                    );
                     return Ok(());
                 }
             } else {
-                ConsoleLogger::progress("Busybox not found, creating custom shell binary as fallback");
+                ConsoleLogger::progress(
+                    "Busybox not found, creating custom shell binary as fallback",
+                );
                 return self.create_robust_shell(container_binary_path);
             }
         }
@@ -852,11 +1008,11 @@ impl ContainerRuntime {
     /// Create a robust shell script that works without external dependencies
     fn create_robust_shell(&self, shell_path: &str) -> Result<(), String> {
         ConsoleLogger::debug("Creating robust shell binary");
-        
+
         // Check if we're dealing with a Nix-linked shell using CommandExecutor
         let shell_candidates = vec!["/bin/sh", "/bin/bash"];
         let mut usable_shell = None;
-        
+
         for shell in &shell_candidates {
             if FileSystemUtils::is_file(shell) && FileSystemUtils::is_executable(shell) {
                 // Use CommandExecutor to check if it's Nix-linked
@@ -872,20 +1028,29 @@ impl ContainerRuntime {
             match FileSystemUtils::copy_file(shell_binary, shell_path) {
                 Ok(_) => {
                     FileSystemUtils::make_executable(shell_path)?;
-                    
+
                     // Try to copy shell dependencies for better compatibility
                     let container_root = shell_path.split("/bin").next().unwrap_or("");
                     if let Err(e) = self.copy_shell_dependencies(shell_binary, container_root) {
-                        ConsoleLogger::warning(&format!("Failed to copy shell dependencies: {}", e));
+                        ConsoleLogger::warning(&format!(
+                            "Failed to copy shell dependencies: {}",
+                            e
+                        ));
                     } else {
                         ConsoleLogger::debug("Shell dependencies copied successfully");
                     }
-                    
-                    ConsoleLogger::success(&format!("Created shell by copying from {}", shell_binary));
+
+                    ConsoleLogger::success(&format!(
+                        "Created shell by copying from {}",
+                        shell_binary
+                    ));
                     return Ok(());
                 }
                 Err(e) => {
-                    ConsoleLogger::warning(&format!("Failed to copy shell from {}: {}", shell_binary, e));
+                    ConsoleLogger::warning(&format!(
+                        "Failed to copy shell from {}: {}",
+                        shell_binary, e
+                    ));
                 }
             }
         }
@@ -898,14 +1063,18 @@ impl ContainerRuntime {
                 ConsoleLogger::warning(&format!("Failed to create minimal shell binary: {}", e));
             }
         }
-        
+
         // Fallback 2: create a shell script as last resort
         ConsoleLogger::progress("Creating shell script as final fallback");
         self.create_shell_script(shell_path)
     }
 
     /// Copy essential libraries for a shell binary
-    fn copy_shell_dependencies(&self, shell_binary: &str, container_root: &str) -> Result<(), String> {
+    fn copy_shell_dependencies(
+        &self,
+        shell_binary: &str,
+        container_root: &str,
+    ) -> Result<(), String> {
         // Use ldd to find dependencies
         let output = Command::new("ldd")
             .arg(shell_binary)
@@ -913,24 +1082,24 @@ impl ContainerRuntime {
             .map_err(|e| format!("Failed to run ldd: {}", e))?;
 
         let ldd_output = String::from_utf8_lossy(&output.stdout);
-        
+
         for line in ldd_output.lines() {
             if let Some(lib_path) = self.extract_library_path(line) {
                 if Path::new(&lib_path).exists() {
                     let lib_name = Path::new(&lib_path).file_name().unwrap().to_str().unwrap();
                     let container_lib_path = format!("{}/lib/{}", container_root, lib_name);
-                    
+
                     if let Some(parent) = Path::new(&container_lib_path).parent() {
                         fs::create_dir_all(parent).ok();
                     }
-                    
+
                     if fs::copy(&lib_path, &container_lib_path).is_ok() {
                         println!("    ✓ Copied library: {}", lib_name);
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -1153,9 +1322,8 @@ int main(int argc, char *argv[]) {
         // Try to compile a static shell
         let temp_c_file = "/tmp/minimal_shell.c";
         let temp_binary = "/tmp/minimal_shell";
-        
-        fs::write(temp_c_file, c_program)
-            .map_err(|e| format!("Failed to write C file: {}", e))?;
+
+        fs::write(temp_c_file, c_program).map_err(|e| format!("Failed to write C file: {}", e))?;
 
         // First try with static linking
         let mut compile_result = Command::new("gcc")
@@ -1181,11 +1349,11 @@ int main(int argc, char *argv[]) {
                             perms.set_mode(0o755);
                             fs::set_permissions(shell_path, perms)
                                 .map_err(|e| format!("Failed to set shell permissions: {}", e))?;
-                            
+
                             // Cleanup
                             fs::remove_file(temp_c_file).ok();
                             fs::remove_file(temp_binary).ok();
-                            
+
                             // Check if it's statically linked
                             if let Ok(ldd_output) = Command::new("ldd").arg(shell_path).output() {
                                 let ldd_str = String::from_utf8_lossy(&ldd_output.stdout);
@@ -1197,7 +1365,7 @@ int main(int argc, char *argv[]) {
                             } else {
                                 println!("  ✅ Created shell binary");
                             }
-                            
+
                             return Ok(());
                         }
                         Err(e) => {
@@ -1298,8 +1466,7 @@ for arg in "$@"; do
 done
 "#;
 
-        fs::write(ls_path, ls_script)
-            .map_err(|e| format!("Failed to create ls script: {}", e))?;
+        fs::write(ls_path, ls_script).map_err(|e| format!("Failed to create ls script: {}", e))?;
 
         let mut perms = fs::metadata(ls_path)
             .map_err(|e| format!("Failed to get ls permissions: {}", e))?
@@ -1350,14 +1517,14 @@ done
     fn install_busybox(&self, rootfs_path: &str) -> Result<(), String> {
         ConsoleLogger::info("Installing busybox for comprehensive container utilities...");
         ConsoleLogger::debug(&format!("Installing busybox to rootfs: {}", rootfs_path));
-        
+
         // Try multiple locations for busybox binary
         let busybox_sources = vec![
-            "/usr/bin/busybox",  // System busybox
-            "./busybox",         // Local busybox
+            "/usr/bin/busybox",             // System busybox
+            "./busybox",                    // Local busybox
             "src/daemon/resources/busybox", // Build-time downloaded busybox
         ];
-        
+
         let mut busybox_source_path = None;
         for source in &busybox_sources {
             if FileSystemUtils::is_file(source) {
@@ -1365,7 +1532,7 @@ done
                 break;
             }
         }
-        
+
         let busybox_source = match busybox_source_path {
             Some(path) => path,
             None => {
@@ -1376,69 +1543,111 @@ done
                     "curl -L -o {} https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox && chmod +x {}",
                     download_path, download_path
                 );
-                
+
                 CommandExecutor::execute_shell(&download_cmd)
                     .map_err(|e| format!("Failed to download busybox: {}", e))?;
-                
+
                 download_path
             }
         };
-        
+
         let busybox_target = format!("{}/bin/busybox", rootfs_path);
-        
+
         // Ensure /bin directory exists
         let bin_dir = format!("{}/bin", rootfs_path);
         FileSystemUtils::create_dir_all_with_logging(&bin_dir, "busybox bin directory")?;
-        
+
         // Copy busybox binary
-        ConsoleLogger::debug(&format!("Copying busybox from {} to {}", busybox_source, busybox_target));
+        ConsoleLogger::debug(&format!(
+            "Copying busybox from {} to {}",
+            busybox_source, busybox_target
+        ));
         FileSystemUtils::copy_file(busybox_source, &busybox_target)?;
-        
+
         // Make it executable
         CommandExecutor::execute_shell(&format!("chmod +x {}", busybox_target))?;
         ConsoleLogger::success(&format!("Busybox installed to {}", busybox_target));
-        
+
         // Get list of all busybox applets
         let applets_output = CommandExecutor::execute_shell(&format!("{} --list", busybox_target))?;
         let applets: Vec<&str> = applets_output.stdout.lines().collect();
-        
+
         // Create symlinks for essential networking and system utilities
         let essential_applets = vec![
-            "sh", "bash", "ash",  // Shells - ensure we have a working shell
-            "nslookup", "ping", "wget", "nc", "telnet", "traceroute",
-            "hostname", "ifconfig", "route", "arp", "netstat",
-            "ps", "top", "kill", "grep", "sed", "awk", "find",
-            "tar", "gzip", "gunzip", "base64", "md5sum", "sha256sum",
-            "head", "tail", "less", "more", "sort", "uniq",
-            "test", "[", "[[", "expr", "seq", "sleep", "timeout"
+            "sh",
+            "bash",
+            "ash", // Shells - ensure we have a working shell
+            "nslookup",
+            "ping",
+            "wget",
+            "nc",
+            "telnet",
+            "traceroute",
+            "hostname",
+            "ifconfig",
+            "route",
+            "arp",
+            "netstat",
+            "ps",
+            "top",
+            "kill",
+            "grep",
+            "sed",
+            "awk",
+            "find",
+            "tar",
+            "gzip",
+            "gunzip",
+            "base64",
+            "md5sum",
+            "sha256sum",
+            "head",
+            "tail",
+            "less",
+            "more",
+            "sort",
+            "uniq",
+            "test",
+            "[",
+            "[[",
+            "expr",
+            "seq",
+            "sleep",
+            "timeout",
         ];
-        
+
         for applet in essential_applets {
             if applets.contains(&applet) {
                 let symlink_path = format!("{}/bin/{}", rootfs_path, applet);
                 // Remove existing file/symlink if it exists
                 let _ = std::fs::remove_file(&symlink_path);
-                
+
                 // Create symlink with absolute path to busybox
                 if let Err(e) = std::os::unix::fs::symlink("/bin/busybox", &symlink_path) {
-                    ConsoleLogger::debug(&format!("Failed to create symlink for {}: {}", applet, e));
+                    ConsoleLogger::debug(&format!(
+                        "Failed to create symlink for {}: {}",
+                        applet, e
+                    ));
                 } else {
-                    ConsoleLogger::debug(&format!("Created busybox symlink: {} -> /bin/busybox", applet));
+                    ConsoleLogger::debug(&format!(
+                        "Created busybox symlink: {} -> /bin/busybox",
+                        applet
+                    ));
                 }
             }
         }
-        
+
         // Also ensure /usr/bin exists and has key symlinks
         let usr_bin_dir = format!("{}/usr/bin", rootfs_path);
         let _ = FileSystemUtils::create_dir_all_with_logging(&usr_bin_dir, "usr/bin directory");
-        
+
         // Create some symlinks in /usr/bin for common paths
         for applet in &["nslookup", "wget", "nc"] {
             let usr_symlink = format!("{}/usr/bin/{}", rootfs_path, applet);
             let _ = std::fs::remove_file(&usr_symlink);
             let _ = std::os::unix::fs::symlink("/bin/busybox", &usr_symlink);
         }
-        
+
         ConsoleLogger::success("Busybox installed with all networking utilities");
         Ok(())
     }
@@ -1446,7 +1655,7 @@ done
     /// Verify that the container shell works
     fn verify_container_shell(&self, rootfs_path: &str) -> Result<(), String> {
         let shell_path = format!("{}/bin/sh", rootfs_path);
-        
+
         if !FileSystemUtils::is_file(&shell_path) {
             ConsoleLogger::warning("No shell found in container, basic commands may not work");
             return Ok(());
@@ -1458,14 +1667,14 @@ done
         }
 
         ConsoleLogger::success("Container shell verification completed");
-                    Ok(())
+        Ok(())
     }
 
     fn extract_image(&self, image_path: &str, rootfs_path: &str) -> Result<(), String> {
         // SECURITY: Validate rootfs path to prevent directory traversal attacks
         let security = NetworkSecurity::new("192.168.100.1".to_string()); // Bridge IP placeholder
         security.validate_rootfs_path(rootfs_path)?;
-        
+
         // Open and decompress the tar file
         let tar_file = std::fs::File::open(image_path)
             .map_err(|e| format!("Failed to open image file: {}", e))?;
@@ -1474,7 +1683,8 @@ done
         let mut archive = Archive::new(tar);
 
         // Extract to rootfs directory
-        archive.unpack(rootfs_path)
+        archive
+            .unpack(rootfs_path)
             .map_err(|e| format!("Failed to extract image: {}", e))?;
 
         ConsoleLogger::success(&format!("Successfully extracted image to {}", rootfs_path));
@@ -1516,10 +1726,13 @@ done
     }
 
     // Internal method for getting container stats
-    fn get_container_stats_for_container(&self, container: &Container, container_id: &str) -> Result<HashMap<String, String>, String> {
-
+    fn get_container_stats_for_container(
+        &self,
+        container: &Container,
+        container_id: &str,
+    ) -> Result<HashMap<String, String>, String> {
         let mut stats = HashMap::new();
-        
+
         if let Some(_pid) = container.pid {
             // Get memory usage from cgroups
             let cgroup_manager = CgroupManager::new(container_id.to_string());
@@ -1545,7 +1758,10 @@ done
         Ok(stats)
     }
 
-    pub fn get_container_stats(&self, container_id: &str) -> Result<HashMap<String, String>, String> {
+    pub fn get_container_stats(
+        &self,
+        container_id: &str,
+    ) -> Result<HashMap<String, String>, String> {
         if let Ok(containers) = self.containers.try_lock() {
             if let Some(container) = containers.get(container_id) {
                 self.get_container_stats_for_container(container, container_id)
@@ -1557,7 +1773,10 @@ done
         }
     }
 
-    pub fn get_container_info_and_stats(&self, container_id: &str) -> (Option<Container>, Result<HashMap<String, String>, String>) {
+    pub fn get_container_info_and_stats(
+        &self,
+        container_id: &str,
+    ) -> (Option<Container>, Result<HashMap<String, String>, String>) {
         let container_info = if let Ok(containers) = self.containers.try_lock() {
             containers.get(container_id).cloned()
         } else {
@@ -1573,7 +1792,10 @@ done
         // Get container PID and monitoring task
         let (pid, monitoring_task) = if let Ok(containers) = self.containers.try_lock() {
             if let Some(container) = containers.get(container_id) {
-                (container.pid, container.monitoring_task.as_ref().map(|t| t.abort_handle()))
+                (
+                    container.pid,
+                    container.monitoring_task.as_ref().map(|t| t.abort_handle()),
+                )
             } else {
                 return Err(format!("Container {} not found", container_id));
             }
@@ -1586,7 +1808,10 @@ done
         // Abort the monitoring task to prevent resource leaks
         if let Some(abort_handle) = monitoring_task {
             abort_handle.abort();
-            ConsoleLogger::debug(&format!("Aborted monitoring task for container {}", container_id));
+            ConsoleLogger::debug(&format!(
+                "Aborted monitoring task for container {}",
+                container_id
+            ));
         }
 
         match ProcessUtils::terminate_process(pid, 10) {
@@ -1600,16 +1825,17 @@ done
                         container.add_log("Container stopped by user request".to_string());
                     }
                 }
-                
+
                 // Don't cleanup resources on stop - container can be restarted
-                ConsoleLogger::debug(&format!("Container {} stopped, resources preserved for restart", container_id));
-                
+                ConsoleLogger::debug(&format!(
+                    "Container {} stopped, resources preserved for restart",
+                    container_id
+                ));
+
                 ConsoleLogger::container_stopped(container_id);
                 Ok(())
             }
-            Err(e) => {
-                Err(format!("Failed to stop container {}: {}", container_id, e))
-            }
+            Err(e) => Err(format!("Failed to stop container {}: {}", container_id, e)),
         }
     }
 
@@ -1636,9 +1862,12 @@ done
         let removed = if let Ok(mut containers) = self.containers.try_lock() {
             containers.remove(container_id).is_some()
         } else {
-            return Err(format!("Failed to lock containers for removal of {}", container_id));
+            return Err(format!(
+                "Failed to lock containers for removal of {}",
+                container_id
+            ));
         };
-        
+
         if !removed {
             return Err(format!("Container {} not found", container_id));
         }
@@ -1652,7 +1881,10 @@ done
             ConsoleLogger::warning(&format!("Resource cleanup failed during removal: {}", e));
             // Try emergency cleanup as fallback
             if let Err(e2) = resource_manager.emergency_cleanup(container_id) {
-                return Err(format!("Failed to remove container {}: {} (emergency cleanup also failed: {})", container_id, e, e2));
+                return Err(format!(
+                    "Failed to remove container {}: {} (emergency cleanup also failed: {})",
+                    container_id, e, e2
+                ));
             }
         }
 
@@ -1676,7 +1908,11 @@ done
     }
 
     /// Set the network configuration for a container
-    pub fn set_container_network(&self, container_id: &str, network_config: ContainerNetworkConfig) -> Result<(), String> {
+    pub fn set_container_network(
+        &self,
+        container_id: &str,
+        network_config: ContainerNetworkConfig,
+    ) -> Result<(), String> {
         if let Ok(mut containers) = self.containers.try_lock() {
             if let Some(container) = containers.get_mut(container_id) {
                 container.network_config = Some(network_config);
@@ -1692,23 +1928,31 @@ done
     /// Get the network configuration for a container
     pub fn get_container_network(&self, container_id: &str) -> Option<ContainerNetworkConfig> {
         if let Ok(containers) = self.containers.try_lock() {
-            containers.get(container_id).and_then(|c| c.network_config.clone())
+            containers
+                .get(container_id)
+                .and_then(|c| c.network_config.clone())
         } else {
             None
         }
     }
 
     /// Configure network for a running container
-    pub fn setup_container_network_post_start(&self, container_id: &str, network_manager: &NetworkManager) -> Result<(), String> {
+    pub fn setup_container_network_post_start(
+        &self,
+        container_id: &str,
+        network_manager: &NetworkManager,
+    ) -> Result<(), String> {
         let (network_config, pid) = if let Ok(containers) = self.containers.try_lock() {
             if let Some(container) = containers.get(container_id) {
-                let network_config = container.network_config
+                let network_config = container
+                    .network_config
                     .as_ref()
                     .ok_or_else(|| format!("No network config for container {}", container_id))?;
-                
-                let pid = container.pid
+
+                let pid = container
+                    .pid
                     .ok_or_else(|| format!("Container {} is not running", container_id))?;
-                
+
                 (network_config.clone(), pid)
             } else {
                 return Err(format!("Container {} not found", container_id));
@@ -1731,26 +1975,41 @@ done
         environment: HashMap<String, String>,
         capture_output: bool,
     ) -> Result<(i32, String, String), String> {
-        ConsoleLogger::progress(&format!("Executing command in container {}: {:?}", container_id, command));
-        ConsoleLogger::debug(&format!("🔍 [EXEC] Working dir: {:?}, Env vars: {}, Capture output: {}", 
-                                     working_directory, environment.len(), capture_output));
+        ConsoleLogger::progress(&format!(
+            "Executing command in container {}: {:?}",
+            container_id, command
+        ));
+        ConsoleLogger::debug(&format!(
+            "🔍 [EXEC] Working dir: {:?}, Env vars: {}, Capture output: {}",
+            working_directory,
+            environment.len(),
+            capture_output
+        ));
 
         let pid = if let Ok(containers) = self.containers.try_lock() {
             if let Some(container) = containers.get(container_id) {
                 match container.state {
                     ContainerState::Running => {
-                        ConsoleLogger::debug(&format!("✅ [EXEC] Container {} is running", container_id));
-                        container.pid.ok_or_else(|| format!("Container {} has no PID", container_id))
-                    },
+                        ConsoleLogger::debug(&format!(
+                            "✅ [EXEC] Container {} is running",
+                            container_id
+                        ));
+                        container
+                            .pid
+                            .ok_or_else(|| format!("Container {} has no PID", container_id))
+                    }
                     ref state => {
                         let state_msg = match state {
                             ContainerState::Created => "CREATED",
-                            ContainerState::Starting => "STARTING", 
+                            ContainerState::Starting => "STARTING",
                             ContainerState::Running => "RUNNING",
                             ContainerState::Exited => "EXITED",
                             ContainerState::Error => "ERROR",
                         };
-                        ConsoleLogger::debug(&format!("❌ [EXEC] Container {} is not running, state: {}", container_id, state_msg));
+                        ConsoleLogger::debug(&format!(
+                            "❌ [EXEC] Container {} is not running, state: {}",
+                            container_id, state_msg
+                        ));
                         Err(format!("Container {} is not running", container_id))
                     }
                 }
@@ -1760,7 +2019,10 @@ done
         } else {
             Err(format!("Failed to lock containers for {}", container_id))
         }?;
-        ConsoleLogger::debug(&format!("🔓 [EXEC] Released containers lock, got PID: {}", ProcessUtils::pid_to_i32(pid)));
+        ConsoleLogger::debug(&format!(
+            "🔓 [EXEC] Released containers lock, got PID: {}",
+            ProcessUtils::pid_to_i32(pid)
+        ));
 
         // Prepare the command to execute
         let cmd_str = if command.len() == 1 {
@@ -1773,8 +2035,13 @@ done
         // Build nsenter command to enter container's namespaces
         let mut nsenter_cmd = vec![
             "nsenter".to_string(),
-            "-t".to_string(), pid.as_raw().to_string(),
-            "-p".to_string(), "-m".to_string(), "-n".to_string(), "-u".to_string(), "-i".to_string(),
+            "-t".to_string(),
+            pid.as_raw().to_string(),
+            "-p".to_string(),
+            "-m".to_string(),
+            "-n".to_string(),
+            "-u".to_string(),
+            "-i".to_string(),
         ];
 
         // Add working directory if specified
@@ -1790,9 +2057,17 @@ done
         }
 
         // Add the actual command
-        nsenter_cmd.extend(vec!["--".to_string(), "/bin/sh".to_string(), "-c".to_string(), cmd_str.clone()]);
-        
-        ConsoleLogger::debug(&format!("🚀 [EXEC] Full nsenter command: {:?}", nsenter_cmd));
+        nsenter_cmd.extend(vec![
+            "--".to_string(),
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            cmd_str.clone(),
+        ]);
+
+        ConsoleLogger::debug(&format!(
+            "🚀 [EXEC] Full nsenter command: {:?}",
+            nsenter_cmd
+        ));
         let exec_start = std::time::SystemTime::now();
 
         // Execute the command using nsenter
@@ -1805,8 +2080,11 @@ done
         let exit_code = output.status.code().unwrap_or(-1);
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        
-        ConsoleLogger::debug(&format!("⏱️ [EXEC] Command completed in {:?}, exit code: {}", elapsed, exit_code));
+
+        ConsoleLogger::debug(&format!(
+            "⏱️ [EXEC] Command completed in {:?}, exit code: {}",
+            elapsed, exit_code
+        ));
         if !stdout.is_empty() {
             ConsoleLogger::debug(&format!("📤 [EXEC] stdout: {}", stdout.trim()));
         }

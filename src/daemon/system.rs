@@ -1,7 +1,7 @@
-use std::env;
-use crate::utils::console::ConsoleLogger;
 use crate::utils::command::CommandExecutor;
+use crate::utils::console::ConsoleLogger;
 use crate::utils::filesystem::FileSystemUtils;
+use std::env;
 
 pub struct SystemRuntime;
 
@@ -16,10 +16,10 @@ impl SystemRuntime {
 
         // Set up basic environment variables
         self.setup_environment_variables()?;
-        
+
         // Verify basic system binaries
         self.verify_system_binaries()?;
-        
+
         // Initialize basic directories
         self.initialize_basic_directories()?;
 
@@ -32,26 +32,26 @@ impl SystemRuntime {
         // Set PATH to include both traditional and Nix store locations
         let path_dirs = vec![
             "/usr/local/sbin",
-            "/usr/local/bin", 
+            "/usr/local/bin",
             "/usr/sbin",
             "/usr/bin",
             "/sbin",
             "/bin",
-            "/nix/store/*/bin",  // Include potential Nix store paths
+            "/nix/store/*/bin", // Include potential Nix store paths
         ];
-        
+
         let path = path_dirs.join(":");
         env::set_var("PATH", &path);
-        
+
         // Set other essential environment variables
         env::set_var("HOME", "/root");
         env::set_var("USER", "root");
         env::set_var("SHELL", "/bin/sh");
         env::set_var("TERM", "xterm");
-        
+
         // Nix-specific environment variables
         env::set_var("NIX_SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt");
-        
+
         ConsoleLogger::debug("Environment variables set (PATH, HOME, USER, SHELL, TERM)");
         Ok(())
     }
@@ -61,12 +61,12 @@ impl SystemRuntime {
         // Check for basic shell first
         let shell_candidates = vec!["/bin/sh", "/bin/bash"];
         let mut working_shell = None;
-        
+
         for shell in &shell_candidates {
             if FileSystemUtils::is_file(shell) && FileSystemUtils::is_executable(shell) {
-                            working_shell = Some(shell);
+                working_shell = Some(shell);
                 ConsoleLogger::debug(&format!("Found executable shell: {}", shell));
-                            break;
+                break;
             }
         }
 
@@ -97,21 +97,20 @@ impl SystemRuntime {
 
     /// Initialize basic directories that should exist in containers
     fn initialize_basic_directories(&self) -> Result<(), String> {
-        let basic_dirs = vec![
-            "/tmp",
-            "/var/log",
-            "/var/tmp",
-            "/root"
-        ];
+        let basic_dirs = vec!["/tmp", "/var/log", "/var/tmp", "/root"];
 
         for dir in &basic_dirs {
             if !FileSystemUtils::is_directory(dir) {
-                match FileSystemUtils::create_dir_all_with_logging(dir, "basic container directory") {
+                match FileSystemUtils::create_dir_all_with_logging(dir, "basic container directory")
+                {
                     Ok(_) => {
                         ConsoleLogger::debug(&format!("Created directory: {}", dir));
                     }
                     Err(e) => {
-                        ConsoleLogger::warning(&format!("Failed to create directory {}: {}", dir, e));
+                        ConsoleLogger::warning(&format!(
+                            "Failed to create directory {}: {}",
+                            dir, e
+                        ));
                     }
                 }
             }
@@ -166,10 +165,7 @@ impl SystemRuntime {
         }
 
         // Check for Nix-style directory structure
-        let nix_indicators = vec![
-            "/nix",
-            "/nix/store",
-        ];
+        let nix_indicators = vec!["/nix", "/nix/store"];
 
         for indicator in nix_indicators {
             if FileSystemUtils::is_directory(indicator) {
@@ -186,20 +182,22 @@ impl SystemRuntime {
 
         match package_manager {
             "nix" => self.prepare_nix_environment(),
-            "apt" => self.prepare_apt_environment(), 
+            "apt" => self.prepare_apt_environment(),
             "yum" | "dnf" => self.prepare_rpm_environment(),
             "none" => {
                 ConsoleLogger::debug("No package manager preparation needed");
                 Ok(())
             }
-            _ => Err(format!("Unsupported package manager: {}", package_manager))
+            _ => Err(format!("Unsupported package manager: {}", package_manager)),
         }
     }
 
     /// Prepare Nix environment (mostly verification)
     fn prepare_nix_environment(&self) -> Result<(), String> {
         ConsoleLogger::debug("Nix environment detected - packages are pre-installed in rootfs");
-        ConsoleLogger::info("Nix setup commands will install packages directly without package manager");
+        ConsoleLogger::info(
+            "Nix setup commands will install packages directly without package manager",
+        );
         Ok(())
     }
 
@@ -231,52 +229,71 @@ impl SystemRuntime {
     }
 
     /// Install a runtime environment (e.g., python3, nodejs, etc.)
-    pub fn install_runtime(&self, package_manager: &str, runtime_name: &str, packages: &[&str]) -> Result<(), String> {
+    pub fn install_runtime(
+        &self,
+        package_manager: &str,
+        runtime_name: &str,
+        packages: &[&str],
+    ) -> Result<(), String> {
         ConsoleLogger::runtime_installing(runtime_name);
-        
+
         match package_manager {
             "nix" => {
-                ConsoleLogger::info(&format!("Nix environment: {} runtime should already be available", runtime_name));
+                ConsoleLogger::info(&format!(
+                    "Nix environment: {} runtime should already be available",
+                    runtime_name
+                ));
                 ConsoleLogger::debug(&format!("Requested packages: {:?}", packages));
-                
+
                 // For Nix, we assume packages are already available in the environment
                 // but we can check if they're actually present
                 for package in packages {
                     if CommandExecutor::is_command_available(package) {
                         ConsoleLogger::debug(&format!("Package '{}' available", package));
-                        } else {
+                    } else {
                         ConsoleLogger::warning(&format!("Package '{}' not found in PATH", package));
                     }
                 }
-                
+
                 Ok(())
             }
             "none" => {
-                ConsoleLogger::info(&format!("No package manager: {} runtime should be pre-installed", runtime_name));
+                ConsoleLogger::info(&format!(
+                    "No package manager: {} runtime should be pre-installed",
+                    runtime_name
+                ));
                 Ok(())
             }
             _ => {
                 ConsoleLogger::progress(&format!("Installing packages: {:?}", packages));
-                match CommandExecutor::execute_package_manager(package_manager, "install", packages) {
+                match CommandExecutor::execute_package_manager(package_manager, "install", packages)
+                {
                     Ok(result) => {
                         if result.success {
                             ConsoleLogger::runtime_installed(runtime_name);
-                            
+
                             // Print installation output for debugging
                             if !result.stdout.trim().is_empty() {
-                                ConsoleLogger::debug(&format!("Installation output: {}", result.stdout.trim()));
+                                ConsoleLogger::debug(&format!(
+                                    "Installation output: {}",
+                                    result.stdout.trim()
+                                ));
                             }
-                            
+
                             Ok(())
                         } else {
-                            Err(format!("Failed to install {} runtime: {}", runtime_name, result.stderr))
+                            Err(format!(
+                                "Failed to install {} runtime: {}",
+                                runtime_name, result.stderr
+                            ))
                         }
                     }
-                    Err(e) => {
-                        Err(format!("Failed to execute package installation command: {}", e))
-                    }
+                    Err(e) => Err(format!(
+                        "Failed to execute package installation command: {}",
+                        e
+                    )),
                 }
             }
         }
     }
-} 
+}

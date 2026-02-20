@@ -1,0 +1,9 @@
+{
+  "target": "fn:kv",
+  "executed": 2352,
+  "crashes": 44,
+  "unique_edges": 259,
+  "discovered_edges_total": 259,
+  "max_new_edges_per_input": 6,
+  "corpus_entries": 2274
+}

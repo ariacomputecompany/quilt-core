@@ -2,24 +2,19 @@
 // Inter-Container Communication CLI commands
 
 use clap::Subcommand;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::time::Duration;
 use tonic::transport::Channel;
-use serde::Serialize;
 
 // Use protobuf definitions from parent
 use crate::quilt::quilt_service_client::QuiltServiceClient;
-use crate::quilt::{
-    GetContainerStatusRequest,
-    ExecContainerRequest,
-    ContainerStatus,
-};
+use crate::quilt::{ContainerStatus, ExecContainerRequest, GetContainerStatusRequest};
 
 #[derive(Debug, Clone, Serialize)]
 pub enum ConnectionType {
     Tcp { port: u16 },
 }
-
 
 #[derive(Debug, Clone, Serialize)]
 pub enum ConnectionStatus {
@@ -66,7 +61,11 @@ pub enum IccCommands {
         connection_type: String,
         #[clap(long, help = "Target port for TCP/UDP connections")]
         port: Option<u16>,
-        #[clap(long, help = "Connection pool size for database connections", default_value = "5")]
+        #[clap(
+            long,
+            help = "Connection pool size for database connections",
+            default_value = "5"
+        )]
         pool_size: Option<u32>,
         #[clap(long, help = "WebSocket path for WebSocket connections")]
         path: Option<String>,
@@ -127,7 +126,11 @@ pub enum ConnectionAction {
         connection_type: Option<String>,
         #[clap(long, help = "Show only active connections")]
         active_only: bool,
-        #[clap(long, help = "Output format: table, json, yaml", default_value = "table")]
+        #[clap(
+            long,
+            help = "Output format: table, json, yaml",
+            default_value = "table"
+        )]
         format: String,
     },
 
@@ -160,7 +163,11 @@ pub enum ConnectionAction {
 pub enum NetworkAction {
     /// Show network topology
     Topology {
-        #[clap(long, help = "Output format: ascii, json, dot", default_value = "ascii")]
+        #[clap(
+            long,
+            help = "Output format: ascii, json, dot",
+            default_value = "ascii"
+        )]
         format: String,
         #[clap(long, help = "Include connection details")]
         details: bool,
@@ -170,7 +177,11 @@ pub enum NetworkAction {
     List {
         #[clap(long, help = "Show only running containers")]
         running_only: bool,
-        #[clap(long, help = "Output format: table, json, yaml", default_value = "table")]
+        #[clap(
+            long,
+            help = "Output format: table, json, yaml",
+            default_value = "table"
+        )]
         format: String,
     },
 
@@ -194,67 +205,92 @@ pub enum NetworkAction {
 }
 
 // Implementation functions (to be implemented)
-pub async fn handle_icc_command(cmd: IccCommands, mut client: QuiltServiceClient<Channel>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_icc_command(
+    cmd: IccCommands,
+    mut client: QuiltServiceClient<Channel>,
+) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
-        IccCommands::Ping { from_container, target, count, timeout } => {
-            handle_ping_command(from_container, target, count, timeout, &mut client).await
-        },
-        IccCommands::Connect { 
-            from_container, 
-            to_container, 
-            connection_type, 
-            port, 
-            pool_size, 
-            path, 
-            queue, 
-            persistent, 
-            auto_reconnect 
+        IccCommands::Ping {
+            from_container,
+            target,
+            count,
+            timeout,
+        } => handle_ping_command(from_container, target, count, timeout, &mut client).await,
+        IccCommands::Connect {
+            from_container,
+            to_container,
+            connection_type,
+            port,
+            pool_size,
+            path,
+            queue,
+            persistent,
+            auto_reconnect,
         } => {
             handle_connect_command(
-                from_container, 
-                to_container, 
-                connection_type, 
-                port, 
-                pool_size, 
-                path, 
-                queue, 
-                persistent, 
+                from_container,
+                to_container,
+                connection_type,
+                port,
+                pool_size,
+                path,
+                queue,
+                persistent,
                 auto_reconnect,
-                &mut client
-            ).await
-        },
-        IccCommands::Disconnect { from_container, to_container, connection_id, force, all } => {
-            handle_disconnect_command(from_container, to_container, connection_id, force, all, &mut client).await
-        },
+                &mut client,
+            )
+            .await
+        }
+        IccCommands::Disconnect {
+            from_container,
+            to_container,
+            connection_id,
+            force,
+            all,
+        } => {
+            handle_disconnect_command(
+                from_container,
+                to_container,
+                connection_id,
+                force,
+                all,
+                &mut client,
+            )
+            .await
+        }
         IccCommands::Connections { action } => {
             handle_connections_command(action, &mut client).await
-        },
-        IccCommands::Exec { container_id, workdir, env, command } => {
-            handle_exec_command(container_id, workdir, env, command, &mut client).await
-        },
-        IccCommands::Network { action } => {
-            handle_network_command(action, &mut client).await
-        },
+        }
+        IccCommands::Exec {
+            container_id,
+            workdir,
+            env,
+            command,
+        } => handle_exec_command(container_id, workdir, env, command, &mut client).await,
+        IccCommands::Network { action } => handle_network_command(action, &mut client).await,
     }
 }
 
 // Placeholder implementations - to be filled in
 async fn handle_ping_command(
-    from_container: String, 
-    target: String, 
-    count: u32, 
+    from_container: String,
+    target: String,
+    count: u32,
     timeout: u32,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("🏓 Pinging from {} to {} ({} packets, {}s timeout)", from_container, target, count, timeout);
-    
+    println!(
+        "🏓 Pinging from {} to {} ({} packets, {}s timeout)",
+        from_container, target, count, timeout
+    );
+
     // ELITE: Check source container status
-    let mut from_request = tonic::Request::new(GetContainerStatusRequest { 
+    let mut from_request = tonic::Request::new(GetContainerStatusRequest {
         container_id: from_container.clone(),
         container_name: String::new(),
     });
     from_request.set_timeout(Duration::from_secs(30));
-    
+
     let _from_status = match client.get_container_status(from_request).await {
         Ok(response) => {
             let status = response.into_inner();
@@ -264,17 +300,25 @@ async fn handle_ping_command(
                 2 => ContainerStatus::Exited,
                 _ => ContainerStatus::Failed,
             };
-            
+
             if !matches!(container_status, ContainerStatus::Running) {
-                return Err(format!("Source container {} is not running (status: {:?})", from_container, container_status).into());
+                return Err(format!(
+                    "Source container {} is not running (status: {:?})",
+                    from_container, container_status
+                )
+                .into());
             }
             status
         }
         Err(e) => {
-            return Err(format!("Failed to get status for container {}: {}", from_container, e).into());
+            return Err(format!(
+                "Failed to get status for container {}: {}",
+                from_container, e
+            )
+            .into());
         }
     };
-    
+
     // ELITE: Determine target IP
     let final_target_ip = if target.contains('.') {
         // Already an IP address
@@ -286,7 +330,7 @@ async fn handle_ping_command(
             container_name: String::new(),
         });
         target_request.set_timeout(Duration::from_secs(30));
-        
+
         match client.get_container_status(target_request).await {
             Ok(response) => {
                 let status = response.into_inner();
@@ -296,33 +340,46 @@ async fn handle_ping_command(
                     2 => ContainerStatus::Exited,
                     _ => ContainerStatus::Failed,
                 };
-                
+
                 if !matches!(container_status, ContainerStatus::Running) {
-                    return Err(format!("Target container {} is not running (status: {:?})", target, container_status).into());
+                    return Err(format!(
+                        "Target container {} is not running (status: {:?})",
+                        target, container_status
+                    )
+                    .into());
                 }
-                
+
                 if status.ip_address.is_empty() || status.ip_address == "No IP assigned" {
-                    return Err(format!("Target container {} has no IP address assigned", target).into());
+                    return Err(
+                        format!("Target container {} has no IP address assigned", target).into(),
+                    );
                 }
-                
+
                 status.ip_address
             }
             Err(e) => {
-                return Err(format!("Failed to get status for target container {}: {}", target, e).into());
+                return Err(format!(
+                    "Failed to get status for target container {}: {}",
+                    target, e
+                )
+                .into());
             }
         }
     };
-    
+
     // ELITE: Use optimized ping with adaptive timeout
     let adaptive_timeout = std::cmp::max(timeout, 10); // Minimum 10s for network load
     let ping_cmd = vec![
         "ping".to_string(),
-        "-c".to_string(), count.to_string(),
-        "-W".to_string(), adaptive_timeout.to_string(),
-        "-i".to_string(), "0.5".to_string(),  // ELITE: Faster ping interval
-        final_target_ip.clone()
+        "-c".to_string(),
+        count.to_string(),
+        "-W".to_string(),
+        adaptive_timeout.to_string(),
+        "-i".to_string(),
+        "0.5".to_string(), // ELITE: Faster ping interval
+        final_target_ip.clone(),
     ];
-    
+
     let mut exec_request = tonic::Request::new(ExecContainerRequest {
         container_id: from_container.clone(),
         command: ping_cmd,
@@ -333,14 +390,14 @@ async fn handle_ping_command(
         copy_script: false,
     });
     // ELITE: Much more generous timeout for exec under load
-    exec_request.set_timeout(Duration::from_secs(adaptive_timeout as u64 + 10)); 
-    
+    exec_request.set_timeout(Duration::from_secs(adaptive_timeout as u64 + 10));
+
     println!("📡 Executing ping with {:.1}s timeout...", adaptive_timeout);
-    
+
     match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
-            
+
             if result.success {
                 println!("✅ Ping successful!");
                 if !result.stdout.is_empty() {
@@ -348,9 +405,14 @@ async fn handle_ping_command(
                     println!("{}", result.stdout);
                 }
             } else {
-                println!("❌ Ping from {} to {} failed. Exit code: {}", from_container, final_target_ip, result.exit_code);
+                println!(
+                    "❌ Ping from {} to {} failed. Exit code: {}",
+                    from_container, final_target_ip, result.exit_code
+                );
                 if result.exit_code == 124 {
-                    println!("⚠️  Exit code 124 indicates timeout - network may still be initializing");
+                    println!(
+                        "⚠️  Exit code 124 indicates timeout - network may still be initializing"
+                    );
                 }
                 if !result.stdout.is_empty() {
                     println!("📤 Output:");
@@ -361,12 +423,10 @@ async fn handle_ping_command(
                     println!("{}", result.stderr);
                 }
             }
-            
+
             Ok(())
         }
-        Err(e) => {
-            Err(format!("Failed to execute ping command: {}", e).into())
-        }
+        Err(e) => Err(format!("Failed to execute ping command: {}", e).into()),
     }
 }
 
@@ -380,41 +440,74 @@ async fn handle_connect_command(
     _queue: Option<String>,
     persistent: bool,
     auto_reconnect: bool,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔗 Establishing {} connection from {} to {}", connection_type, from_container, to_container);
-    
+    println!(
+        "🔗 Establishing {} connection from {} to {}",
+        connection_type, from_container, to_container
+    );
+
     // Validate containers exist and are running
     let _from_status = validate_container_running(&from_container, client).await?;
     let to_status = validate_container_running(&to_container, client).await?;
-    
+
     // Parse connection type and establish connection
     match connection_type.as_str() {
         "tcp" => {
             let target_port = port.unwrap_or(8080);
-            establish_tcp_connection(&from_container, &to_container, &to_status.ip_address, target_port, persistent, client).await?;
-        },
+            establish_tcp_connection(
+                &from_container,
+                &to_container,
+                &to_status.ip_address,
+                target_port,
+                persistent,
+                client,
+            )
+            .await?;
+        }
         "udp" => {
             let target_port = port.unwrap_or(8080);
-            establish_udp_connection(&from_container, &to_container, &to_status.ip_address, target_port, persistent, client).await?;
-        },
+            establish_udp_connection(
+                &from_container,
+                &to_container,
+                &to_status.ip_address,
+                target_port,
+                persistent,
+                client,
+            )
+            .await?;
+        }
         "http" => {
             let target_port = port.unwrap_or(80);
-            establish_http_connection(&from_container, &to_container, &to_status.ip_address, target_port, client).await?;
-        },
+            establish_http_connection(
+                &from_container,
+                &to_container,
+                &to_status.ip_address,
+                target_port,
+                client,
+            )
+            .await?;
+        }
         _ => {
-            return Err(format!("Unsupported connection type: {}. Supported: tcp, udp, http", connection_type).into());
+            return Err(format!(
+                "Unsupported connection type: {}. Supported: tcp, udp, http",
+                connection_type
+            )
+            .into());
         }
     }
-    
-    println!("✅ {} connection established successfully", connection_type.to_uppercase());
+
+    println!(
+        "✅ {} connection established successfully",
+        connection_type.to_uppercase()
+    );
     if persistent {
         println!("🔄 Connection is persistent and will be maintained");
     }
     if auto_reconnect {
         println!("🔁 Auto-reconnect is enabled for connection failures");
     }
-    
+
     Ok(())
 }
 
@@ -424,7 +517,7 @@ async fn handle_disconnect_command(
     connection_id: Option<String>,
     force: bool,
     all: bool,
-    _client: &mut QuiltServiceClient<Channel>
+    _client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if all {
         println!("🔌 Disconnecting all connections for {}", from_container);
@@ -440,20 +533,32 @@ async fn handle_disconnect_command(
     Ok(())
 }
 
-async fn handle_connections_command(action: ConnectionAction, client: &mut QuiltServiceClient<Channel>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_connections_command(
+    action: ConnectionAction,
+    client: &mut QuiltServiceClient<Channel>,
+) -> Result<(), Box<dyn std::error::Error>> {
     match action {
-        ConnectionAction::List { container, connection_type, active_only, format } => {
+        ConnectionAction::List {
+            container,
+            connection_type,
+            active_only,
+            format,
+        } => {
             list_connections(container, connection_type, active_only, format, client).await?;
-        },
+        }
         ConnectionAction::Show { connection_id } => {
             show_connection_details(connection_id, client).await?;
-        },
-        ConnectionAction::Monitor { container, interval, metrics } => {
+        }
+        ConnectionAction::Monitor {
+            container,
+            interval,
+            metrics,
+        } => {
             monitor_connections(container, interval, metrics, client).await?;
-        },
+        }
         ConnectionAction::Health { target, detailed } => {
             check_connection_health(target, detailed, client).await?;
-        },
+        }
     }
     Ok(())
 }
@@ -463,7 +568,7 @@ async fn handle_exec_command(
     workdir: Option<String>,
     env: Vec<String>,
     command: Vec<String>,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Executing command in container {}", container_id);
     println!("   Command: {:?}", command);
@@ -476,15 +581,19 @@ async fn handle_exec_command(
 
     // Parse environment variables from "KEY=VALUE" format
     let mut environment = HashMap::new();
-    
+
     // Always add QUILT_SERVER to point to the bridge IP for nested container access
     environment.insert("QUILT_SERVER".to_string(), "10.42.0.1:50051".to_string());
-    
+
     for env_var in env {
         if let Some((key, value)) = env_var.split_once('=') {
             environment.insert(key.to_string(), value.to_string());
         } else {
-            return Err(format!("Invalid environment variable format: {}. Use KEY=VALUE", env_var).into());
+            return Err(format!(
+                "Invalid environment variable format: {}. Use KEY=VALUE",
+                env_var
+            )
+            .into());
         }
     }
 
@@ -503,9 +612,12 @@ async fn handle_exec_command(
     match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
-            
+
             if result.success {
-                println!("✅ Command executed successfully (exit code: {})", result.exit_code);
+                println!(
+                    "✅ Command executed successfully (exit code: {})",
+                    result.exit_code
+                );
                 if !result.stdout.is_empty() {
                     println!("📤 Output:");
                     println!("{}", result.stdout);
@@ -525,29 +637,38 @@ async fn handle_exec_command(
                     println!("{}", result.stdout);
                 }
             }
-            
+
             Ok(())
         }
-        Err(e) => {
-            Err(format!("Failed to execute command: {}", e).into())
-        }
+        Err(e) => Err(format!("Failed to execute command: {}", e).into()),
     }
 }
 
-async fn handle_network_command(action: NetworkAction, client: &mut QuiltServiceClient<Channel>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_network_command(
+    action: NetworkAction,
+    client: &mut QuiltServiceClient<Channel>,
+) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         NetworkAction::Topology { format, details } => {
             display_network_topology(format, details, client).await?;
-        },
-        NetworkAction::List { running_only, format } => {
+        }
+        NetworkAction::List {
+            running_only,
+            format,
+        } => {
             list_network_information(running_only, format, client).await?;
-        },
+        }
         NetworkAction::Show { container_id } => {
             show_container_network_info(container_id, client).await?;
-        },
-        NetworkAction::Test { from_container, target, port, protocol } => {
+        }
+        NetworkAction::Test {
+            from_container,
+            target,
+            port,
+            protocol,
+        } => {
             test_network_connectivity(from_container, target, port, protocol, client).await?;
-        },
+        }
     }
     Ok(())
 }
@@ -555,17 +676,19 @@ async fn handle_network_command(action: NetworkAction, client: &mut QuiltService
 /// Validate that a container exists and is running
 async fn validate_container_running(
     container_id: &str,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<crate::quilt::GetContainerStatusResponse, Box<dyn std::error::Error>> {
     let mut request = tonic::Request::new(GetContainerStatusRequest {
         container_id: container_id.to_string(),
         container_name: String::new(),
     });
     request.set_timeout(Duration::from_secs(10));
-    
-    let response = client.get_container_status(request).await
+
+    let response = client
+        .get_container_status(request)
+        .await
         .map_err(|e| format!("Failed to get status for container {}: {}", container_id, e))?;
-    
+
     let status = response.into_inner();
     let container_status = match status.status {
         0 => ContainerStatus::Pending,
@@ -573,15 +696,19 @@ async fn validate_container_running(
         2 => ContainerStatus::Exited,
         _ => ContainerStatus::Failed,
     };
-    
+
     if !matches!(container_status, ContainerStatus::Running) {
-        return Err(format!("Container {} is not running (status: {:?})", container_id, container_status).into());
+        return Err(format!(
+            "Container {} is not running (status: {:?})",
+            container_id, container_status
+        )
+        .into());
     }
-    
+
     if status.ip_address.is_empty() || status.ip_address == "No IP assigned" {
         return Err(format!("Container {} has no IP address assigned", container_id).into());
     }
-    
+
     Ok(status)
 }
 
@@ -592,19 +719,22 @@ async fn establish_tcp_connection(
     target_ip: &str,
     port: u16,
     persistent: bool,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🔌 Establishing TCP connection to {}:{}", target_ip, port);
-    
+
     // Test connection using netcat or telnet
     let test_cmd = vec![
         "timeout".to_string(),
         "5".to_string(),
         "bash".to_string(),
         "-c".to_string(),
-        format!("echo 'CONNECTION_TEST' | nc -w 1 {} {} || echo 'CONNECTION_FAILED'", target_ip, port)
+        format!(
+            "echo 'CONNECTION_TEST' | nc -w 1 {} {} || echo 'CONNECTION_FAILED'",
+            target_ip, port
+        ),
     ];
-    
+
     let mut exec_request = tonic::Request::new(ExecContainerRequest {
         container_id: from_container.to_string(),
         command: test_cmd,
@@ -615,7 +745,7 @@ async fn establish_tcp_connection(
         copy_script: false,
     });
     exec_request.set_timeout(Duration::from_secs(10));
-    
+
     match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
@@ -624,18 +754,18 @@ async fn establish_tcp_connection(
             } else {
                 println!("✅ TCP connection test completed");
             }
-            
+
             if persistent {
                 println!("🔗 Setting up persistent TCP tunnel...");
                 // For persistent connections, we could set up port forwarding or keep-alive
                 // This would require more complex implementation
             }
-        },
+        }
         Err(e) => {
             return Err(format!("Failed to test TCP connection: {}", e).into());
         }
     }
-    
+
     Ok(())
 }
 
@@ -646,10 +776,10 @@ async fn establish_udp_connection(
     target_ip: &str,
     port: u16,
     persistent: bool,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("📡 Establishing UDP connection to {}:{}", target_ip, port);
-    
+
     // Test UDP connection
     let test_cmd = vec![
         "timeout".to_string(),
@@ -658,7 +788,7 @@ async fn establish_udp_connection(
         "-c".to_string(),
         format!("echo 'UDP_TEST' | nc -u -w 1 {} {} 2>/dev/null && echo 'UDP_SENT' || echo 'UDP_FAILED'", target_ip, port)
     ];
-    
+
     let mut exec_request = tonic::Request::new(ExecContainerRequest {
         container_id: from_container.to_string(),
         command: test_cmd,
@@ -669,7 +799,7 @@ async fn establish_udp_connection(
         copy_script: false,
     });
     exec_request.set_timeout(Duration::from_secs(8));
-    
+
     match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
@@ -678,16 +808,16 @@ async fn establish_udp_connection(
             } else {
                 println!("⚠️  UDP connection test inconclusive (UDP is connectionless)");
             }
-            
+
             if persistent {
                 println!("📡 UDP connection established (connectionless protocol)");
             }
-        },
+        }
         Err(e) => {
             return Err(format!("Failed to test UDP connection: {}", e).into());
         }
     }
-    
+
     Ok(())
 }
 
@@ -697,10 +827,13 @@ async fn establish_http_connection(
     _to_container: &str,
     target_ip: &str,
     port: u16,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("🌐 Establishing HTTP connection to http://{}:{}", target_ip, port);
-    
+    println!(
+        "🌐 Establishing HTTP connection to http://{}:{}",
+        target_ip, port
+    );
+
     // Test HTTP connection using curl
     let test_cmd = vec![
         "timeout".to_string(),
@@ -713,9 +846,9 @@ async fn establish_http_connection(
         "%{http_code}".to_string(),
         "--connect-timeout".to_string(),
         "5".to_string(),
-        format!("http://{}:{}/", target_ip, port)
+        format!("http://{}:{}/", target_ip, port),
     ];
-    
+
     let mut exec_request = tonic::Request::new(ExecContainerRequest {
         container_id: from_container.to_string(),
         command: test_cmd,
@@ -726,30 +859,36 @@ async fn establish_http_connection(
         copy_script: false,
     });
     exec_request.set_timeout(Duration::from_secs(15));
-    
+
     match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
             let http_code = result.stdout.trim();
-            
+
             if http_code.len() == 3 && http_code.chars().all(|c| c.is_ascii_digit()) {
                 let code: u16 = http_code.parse().unwrap_or(0);
                 match code {
                     200..=299 => println!("✅ HTTP connection successful ({})", code),
                     300..=399 => println!("🔄 HTTP connection successful with redirect ({})", code),
-                    400..=499 => println!("⚠️  HTTP connection successful but client error ({})", code),
-                    500..=599 => println!("❌ HTTP connection successful but server error ({})", code),
+                    400..=499 => {
+                        println!("⚠️  HTTP connection successful but client error ({})", code)
+                    }
+                    500..=599 => {
+                        println!("❌ HTTP connection successful but server error ({})", code)
+                    }
                     _ => println!("🔗 HTTP connection established, response code: {}", code),
                 }
             } else {
-                println!("⚠️  HTTP connection test inconclusive (no HTTP service or connection failed)");
+                println!(
+                    "⚠️  HTTP connection test inconclusive (no HTTP service or connection failed)"
+                );
             }
-        },
+        }
         Err(e) => {
             return Err(format!("Failed to test HTTP connection: {}", e).into());
         }
     }
-    
+
     Ok(())
 }
 
@@ -759,47 +898,52 @@ async fn list_connections(
     _connection_type_filter: Option<String>,
     active_only: bool,
     format: String,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("📋 Listing connections (format: {})", format);
-    
+
     // Get list of all running containers first
     let running_containers = get_running_containers(client).await?;
-    
+
     if running_containers.is_empty() {
         println!("No running containers found");
         return Ok(());
     }
-    
+
     // For each container, check network connectivity to others
     let mut connections = Vec::new();
-    
+
     for from_container in &running_containers {
         if let Some(ref filter) = container_filter {
             if !from_container.contains(filter) {
                 continue;
             }
         }
-        
+
         for to_container in &running_containers {
             if from_container == to_container {
                 continue;
             }
-            
+
             // Test basic connectivity
-            if let Ok(connectivity) = test_container_connectivity(from_container, to_container, client).await {
+            if let Ok(connectivity) =
+                test_container_connectivity(from_container, to_container, client).await
+            {
                 if !active_only || connectivity.is_active {
                     connections.push(connectivity);
                 }
             }
         }
     }
-    
+
     // Display connections based on format
     match format.as_str() {
         "json" => {
-            println!("{}", serde_json::to_string_pretty(&connections).unwrap_or_else(|_| "[]".to_string()));
-        },
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&connections).unwrap_or_else(|_| "[]".to_string())
+            );
+        }
         "table" | _ => {
             if connections.is_empty() {
                 println!("No connections found matching criteria");
@@ -808,43 +952,56 @@ async fn list_connections(
                 println!("│ From Container      │ To Container        │ Protocol │ Status      │");
                 println!("├─────────────────────┼─────────────────────┼──────────┼─────────────┤");
                 for conn in connections {
-                    println!("│ {:19} │ {:19} │ {:8} │ {:11} │", 
-                           truncate_string(&conn.from_container, 19),
-                           truncate_string(&conn.to_container, 19),
-                           conn.protocol,
-                           if conn.is_active { "Active" } else { "Inactive" });
+                    println!(
+                        "│ {:19} │ {:19} │ {:8} │ {:11} │",
+                        truncate_string(&conn.from_container, 19),
+                        truncate_string(&conn.to_container, 19),
+                        conn.protocol,
+                        if conn.is_active { "Active" } else { "Inactive" }
+                    );
                 }
                 println!("└─────────────────────┴─────────────────────┴──────────┴─────────────┘");
             }
         }
     }
-    
+
     Ok(())
 }
 
 /// Show detailed connection information
 async fn show_connection_details(
     connection_id: String,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Connection Details for {}", connection_id);
-    
+
     // Parse connection ID (format: from_container:to_container:protocol)
     let parts: Vec<&str> = connection_id.split(':').collect();
     if parts.len() != 3 {
-        return Err("Invalid connection ID format. Expected: from_container:to_container:protocol".into());
+        return Err(
+            "Invalid connection ID format. Expected: from_container:to_container:protocol".into(),
+        );
     }
-    
+
     let from_container = parts[0];
     let to_container = parts[1];
-    
+
     // Get detailed connectivity information
-    if let Ok(connectivity) = test_container_connectivity(from_container, to_container, client).await {
+    if let Ok(connectivity) =
+        test_container_connectivity(from_container, to_container, client).await
+    {
         println!("Connection Information:");
         println!("  From: {}", connectivity.from_container);
         println!("  To: {}", connectivity.to_container);
         println!("  Protocol: {}", connectivity.protocol);
-        println!("  Status: {}", if connectivity.is_active { "Active" } else { "Inactive" });
+        println!(
+            "  Status: {}",
+            if connectivity.is_active {
+                "Active"
+            } else {
+                "Inactive"
+            }
+        );
         println!("  Last Tested: {}", connectivity.last_tested);
         if let Some(latency) = connectivity.latency_ms {
             println!("  Latency: {}ms", latency);
@@ -852,7 +1009,7 @@ async fn show_connection_details(
     } else {
         println!("❌ Connection not found or inaccessible");
     }
-    
+
     Ok(())
 }
 
@@ -861,23 +1018,33 @@ async fn monitor_connections(
     container_filter: Option<String>,
     interval: u32,
     metrics: bool,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Monitoring connections ({}s interval)", interval);
     println!("Press Ctrl+C to stop monitoring");
-    
+
     loop {
         println!("\n{}", "─".repeat(60));
-        println!("Connection Status - {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+        println!(
+            "Connection Status - {}",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        );
         println!("{}", "─".repeat(60));
-        
-        list_connections(container_filter.clone(), None, true, "table".to_string(), client).await?;
-        
+
+        list_connections(
+            container_filter.clone(),
+            None,
+            true,
+            "table".to_string(),
+            client,
+        )
+        .await?;
+
         if metrics {
             println!("\n📈 Connection Metrics:");
             display_connection_metrics(client).await?;
         }
-        
+
         tokio::time::sleep(Duration::from_secs(interval as u64)).await;
     }
 }
@@ -886,10 +1053,10 @@ async fn monitor_connections(
 async fn check_connection_health(
     target: String,
     detailed: bool,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🏥 Checking connection health for {}", target);
-    
+
     // If target contains ':', treat as connection ID, otherwise as container ID
     if target.contains(':') {
         // Connection ID format
@@ -897,8 +1064,10 @@ async fn check_connection_health(
         if parts.len() >= 2 {
             let from_container = parts[0];
             let to_container = parts[1];
-            
-            if let Ok(connectivity) = test_container_connectivity(from_container, to_container, client).await {
+
+            if let Ok(connectivity) =
+                test_container_connectivity(from_container, to_container, client).await
+            {
                 print_health_status(&connectivity, detailed);
             } else {
                 println!("❌ Connection health check failed");
@@ -909,14 +1078,16 @@ async fn check_connection_health(
         let running_containers = get_running_containers(client).await?;
         let mut healthy_connections = 0;
         let mut total_connections = 0;
-        
+
         for other_container in &running_containers {
             if other_container == &target {
                 continue;
             }
-            
+
             total_connections += 1;
-            if let Ok(connectivity) = test_container_connectivity(&target, other_container, client).await {
+            if let Ok(connectivity) =
+                test_container_connectivity(&target, other_container, client).await
+            {
                 if connectivity.is_active {
                     healthy_connections += 1;
                 }
@@ -925,8 +1096,11 @@ async fn check_connection_health(
                 }
             }
         }
-        
-        println!("Container {} health: {}/{} connections active", target, healthy_connections, total_connections);
+
+        println!(
+            "Container {} health: {}/{} connections active",
+            target, healthy_connections, total_connections
+        );
         if healthy_connections == total_connections {
             println!("✅ All connections healthy");
         } else if healthy_connections > 0 {
@@ -935,28 +1109,32 @@ async fn check_connection_health(
             println!("❌ No healthy connections");
         }
     }
-    
+
     Ok(())
 }
 
 /// Display connection metrics
 async fn display_connection_metrics(
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let running_containers = get_running_containers(client).await?;
     let total_containers = running_containers.len();
-    let total_possible_connections = if total_containers > 1 { total_containers * (total_containers - 1) } else { 0 };
-    
+    let total_possible_connections = if total_containers > 1 {
+        total_containers * (total_containers - 1)
+    } else {
+        0
+    };
+
     println!("  Total Containers: {}", total_containers);
     println!("  Possible Connections: {}", total_possible_connections);
     println!("  Network Topology: Bridge (10.42.0.0/16)");
-    
+
     Ok(())
 }
 
 /// Get list of running containers
 async fn get_running_containers(
-    _client: &mut QuiltServiceClient<Channel>
+    _client: &mut QuiltServiceClient<Channel>,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // This is a simplified implementation - in a real system, you'd query the server for all containers
     // For now, we'll return an empty list since we don't have a list_containers gRPC method
@@ -969,21 +1147,23 @@ async fn get_running_containers(
 async fn test_container_connectivity(
     from_container: &str,
     to_container: &str,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<ExtendedConnectionInfo, Box<dyn std::error::Error>> {
     let start_time = std::time::Instant::now();
-    
+
     // Get target container's IP
     let to_status = validate_container_running(to_container, client).await?;
-    
+
     // Test ICMP connectivity
     let ping_cmd = vec![
         "ping".to_string(),
-        "-c".to_string(), "1".to_string(),
-        "-W".to_string(), "2".to_string(),
-        to_status.ip_address.clone()
+        "-c".to_string(),
+        "1".to_string(),
+        "-W".to_string(),
+        "2".to_string(),
+        to_status.ip_address.clone(),
     ];
-    
+
     let mut exec_request = tonic::Request::new(ExecContainerRequest {
         container_id: from_container.to_string(),
         command: ping_cmd,
@@ -994,31 +1174,40 @@ async fn test_container_connectivity(
         copy_script: false,
     });
     exec_request.set_timeout(Duration::from_secs(5));
-    
+
     let is_active = match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
             result.success && result.exit_code == 0
-        },
+        }
         Err(_) => false,
     };
-    
+
     let latency_ms = if is_active {
         Some(start_time.elapsed().as_millis() as u32)
     } else {
         None
     };
-    
+
     Ok(ExtendedConnectionInfo {
         from_container: from_container.to_string(),
         to_container: to_container.to_string(),
         connection_type: ConnectionType::Tcp { port: 80 }, // Default
-        established_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
-        status: if is_active { ConnectionStatus::Active } else { ConnectionStatus::Disconnected },
+        established_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+        status: if is_active {
+            ConnectionStatus::Active
+        } else {
+            ConnectionStatus::Disconnected
+        },
         connection_id: format!("{}:{}:icmp", from_container, to_container),
         protocol: "ICMP".to_string(),
         is_active,
-        last_tested: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        last_tested: chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
         latency_ms,
     })
 }
@@ -1026,8 +1215,11 @@ async fn test_container_connectivity(
 /// Print health status for a connection
 fn print_health_status(connectivity: &ExtendedConnectionInfo, detailed: bool) {
     let status_icon = if connectivity.is_active { "✅" } else { "❌" };
-    println!("{} {}->{} ({})", status_icon, connectivity.from_container, connectivity.to_container, connectivity.protocol);
-    
+    println!(
+        "{} {}->{} ({})",
+        status_icon, connectivity.from_container, connectivity.to_container, connectivity.protocol
+    );
+
     if detailed {
         println!("    Last tested: {}", connectivity.last_tested);
         if let Some(latency) = connectivity.latency_ms {
@@ -1049,15 +1241,15 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 async fn display_network_topology(
     format: String,
     details: bool,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🌐 Network topology (format: {})", format);
     if details {
         println!("   Including: Connection details");
     }
-    
+
     let running_containers = get_running_containers(client).await?;
-    
+
     match format.as_str() {
         "json" => {
             let topology_data = serde_json::json!({
@@ -1068,7 +1260,7 @@ async fn display_network_topology(
                 "dns_server": "10.42.0.1:1053"
             });
             println!("{}", serde_json::to_string_pretty(&topology_data)?);
-        },
+        }
         "dot" => {
             println!("digraph NetworkTopology {{");
             println!("  rankdir=TB;");
@@ -1078,7 +1270,7 @@ async fn display_network_topology(
                 println!("  bridge -> \"{}\";", container);
             }
             println!("}}");
-        },
+        }
         "ascii" | _ => {
             println!("Network Topology:");
             println!("┌──────────────────────────────────────┐");
@@ -1093,13 +1285,17 @@ async fn display_network_topology(
                 println!("            [No containers]");
             } else {
                 for (i, container) in running_containers.iter().enumerate() {
-                    let connector = if i == running_containers.len() - 1 { "└──" } else { "├──" };
+                    let connector = if i == running_containers.len() - 1 {
+                        "└──"
+                    } else {
+                        "├──"
+                    };
                     println!("               {} {}", connector, container);
                 }
             }
         }
     }
-    
+
     if details {
         println!("\nNetwork Details:");
         println!("  Bridge Interface: quilt0");
@@ -1107,7 +1303,7 @@ async fn display_network_topology(
         println!("  IP Range: 10.42.0.2 - 10.42.255.254");
         println!("  Total Containers: {}", running_containers.len());
     }
-    
+
     Ok(())
 }
 
@@ -1115,57 +1311,62 @@ async fn display_network_topology(
 async fn list_network_information(
     running_only: bool,
     format: String,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("📋 Container network information (format: {})", format);
     if running_only {
         println!("   Filter: Running containers only");
     }
-    
+
     let containers = get_running_containers(client).await?;
-    
+
     if containers.is_empty() {
         println!("No containers found");
         return Ok(());
     }
-    
+
     match format.as_str() {
         "json" => {
-            let network_info = containers.iter().map(|container| {
-                serde_json::json!({
-                    "container_id": container,
-                    "ip_address": "10.42.0.x",
-                    "bridge": "quilt0",
-                    "dns_server": "10.42.0.1:1053"
+            let network_info = containers
+                .iter()
+                .map(|container| {
+                    serde_json::json!({
+                        "container_id": container,
+                        "ip_address": "10.42.0.x",
+                        "bridge": "quilt0",
+                        "dns_server": "10.42.0.1:1053"
+                    })
                 })
-            }).collect::<Vec<_>>();
+                .collect::<Vec<_>>();
             println!("{}", serde_json::to_string_pretty(&network_info)?);
-        },
+        }
         "table" | _ => {
             println!("┌─────────────────────┬─────────────┬─────────────┬─────────────┐");
             println!("│ Container ID        │ IP Address  │ Bridge      │ Status      │");
             println!("├─────────────────────┼─────────────┼─────────────┼─────────────┤");
             for container in containers {
-                println!("│ {:19} │ {:11} │ {:11} │ {:11} │",
-                       truncate_string(&container, 19),
-                       "10.42.0.x",
-                       "quilt0",
-                       "Connected");
+                println!(
+                    "│ {:19} │ {:11} │ {:11} │ {:11} │",
+                    truncate_string(&container, 19),
+                    "10.42.0.x",
+                    "quilt0",
+                    "Connected"
+                );
             }
             println!("└─────────────────────┴─────────────┴─────────────┴─────────────┘");
         }
     }
-    
+
     Ok(())
 }
 
 /// Show network information for a specific container
 async fn show_container_network_info(
     container_id: String,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Network information for container {}", container_id);
-    
+
     // Get container status to retrieve network info
     match validate_container_running(&container_id, client).await {
         Ok(status) => {
@@ -1177,18 +1378,21 @@ async fn show_container_network_info(
             println!("  Gateway: 10.42.0.1");
             println!("  DNS Server: 10.42.0.1:1053");
             println!("  Status: Connected");
-            
+
             // Test basic connectivity
             println!("\nConnectivity Test:");
             if let Ok(connectivity) = test_gateway_connectivity(&container_id, client).await {
-                println!("  Gateway Reachable: {}", if connectivity { "Yes" } else { "No" });
+                println!(
+                    "  Gateway Reachable: {}",
+                    if connectivity { "Yes" } else { "No" }
+                );
             }
-        },
+        }
         Err(e) => {
             println!("❌ Cannot retrieve network information: {}", e);
         }
     }
-    
+
     Ok(())
 }
 
@@ -1198,17 +1402,22 @@ async fn test_network_connectivity(
     target: String,
     port: Option<u16>,
     protocol: String,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("🧪 Testing {} connectivity from {} to {}", protocol, from_container, target);
+    println!(
+        "🧪 Testing {} connectivity from {} to {}",
+        protocol, from_container, target
+    );
     if let Some(port) = port {
         println!("   Port: {}", port);
     }
-    
+
     match protocol.to_lowercase().as_str() {
         "icmp" => {
             // Test ICMP ping
-            if let Ok(connectivity) = test_container_connectivity(&from_container, &target, client).await {
+            if let Ok(connectivity) =
+                test_container_connectivity(&from_container, &target, client).await
+            {
                 if connectivity.is_active {
                     println!("✅ ICMP connectivity successful");
                     if let Some(latency) = connectivity.latency_ms {
@@ -1218,35 +1427,43 @@ async fn test_network_connectivity(
                     println!("❌ ICMP connectivity failed");
                 }
             }
-        },
+        }
         "tcp" => {
             let test_port = port.unwrap_or(80);
-            establish_tcp_connection(&from_container, &target, &target, test_port, false, client).await?;
-        },
+            establish_tcp_connection(&from_container, &target, &target, test_port, false, client)
+                .await?;
+        }
         "udp" => {
             let test_port = port.unwrap_or(80);
-            establish_udp_connection(&from_container, &target, &target, test_port, false, client).await?;
-        },
+            establish_udp_connection(&from_container, &target, &target, test_port, false, client)
+                .await?;
+        }
         _ => {
-            return Err(format!("Unsupported protocol: {}. Supported: icmp, tcp, udp", protocol).into());
+            return Err(format!(
+                "Unsupported protocol: {}. Supported: icmp, tcp, udp",
+                protocol
+            )
+            .into());
         }
     }
-    
+
     Ok(())
 }
 
 /// Test gateway connectivity for a container
 async fn test_gateway_connectivity(
     container_id: &str,
-    client: &mut QuiltServiceClient<Channel>
+    client: &mut QuiltServiceClient<Channel>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let ping_cmd = vec![
         "ping".to_string(),
-        "-c".to_string(), "1".to_string(),
-        "-W".to_string(), "2".to_string(),
-        "10.42.0.1".to_string() // Gateway IP
+        "-c".to_string(),
+        "1".to_string(),
+        "-W".to_string(),
+        "2".to_string(),
+        "10.42.0.1".to_string(), // Gateway IP
     ];
-    
+
     let mut exec_request = tonic::Request::new(ExecContainerRequest {
         container_id: container_id.to_string(),
         command: ping_cmd,
@@ -1257,12 +1474,12 @@ async fn test_gateway_connectivity(
         copy_script: false,
     });
     exec_request.set_timeout(Duration::from_secs(5));
-    
+
     match client.exec_container(exec_request).await {
         Ok(response) => {
             let result = response.into_inner();
             Ok(result.success && result.exit_code == 0)
-        },
+        }
         Err(_) => Ok(false),
     }
-} 
+}

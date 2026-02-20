@@ -1,5 +1,5 @@
-use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ProcessUtils;
@@ -35,7 +35,11 @@ impl ProcessUtils {
 
         // Send SIGTERM first
         if let Err(e) = signal::kill(pid, Signal::SIGTERM) {
-            return Err(format!("Failed to send SIGTERM to process {}: {}", Self::pid_to_i32(pid), e));
+            return Err(format!(
+                "Failed to send SIGTERM to process {}: {}",
+                Self::pid_to_i32(pid),
+                e
+            ));
         }
 
         // Wait for graceful shutdown
@@ -49,14 +53,21 @@ impl ProcessUtils {
         // Process still running, use SIGKILL
         if Self::is_process_running(pid) {
             if let Err(e) = signal::kill(pid, Signal::SIGKILL) {
-                return Err(format!("Failed to send SIGKILL to process {}: {}", Self::pid_to_i32(pid), e));
+                return Err(format!(
+                    "Failed to send SIGKILL to process {}: {}",
+                    Self::pid_to_i32(pid),
+                    e
+                ));
             }
 
             // Give it a moment to die
             thread::sleep(Duration::from_millis(100));
-            
+
             if Self::is_process_running(pid) {
-                return Err(format!("Process {} refused to die even after SIGKILL", Self::pid_to_i32(pid)));
+                return Err(format!(
+                    "Process {} refused to die even after SIGKILL",
+                    Self::pid_to_i32(pid)
+                ));
             }
         }
 
@@ -65,8 +76,14 @@ impl ProcessUtils {
 
     /// Send a signal to a process
     pub fn send_signal(pid: Pid, signal: Signal) -> Result<(), String> {
-        signal::kill(pid, signal)
-            .map_err(|e| format!("Failed to send signal {:?} to process {}: {}", signal, Self::pid_to_i32(pid), e))
+        signal::kill(pid, signal).map_err(|e| {
+            format!(
+                "Failed to send signal {:?} to process {}: {}",
+                signal,
+                Self::pid_to_i32(pid),
+                e
+            )
+        })
     }
 
     /// Get current timestamp in seconds since Unix epoch
@@ -80,9 +97,9 @@ impl ProcessUtils {
     /// Format timestamp as human-readable string
     pub fn format_timestamp(timestamp: u64) -> String {
         use std::time::{Duration, UNIX_EPOCH};
-        
+
         let datetime = UNIX_EPOCH + Duration::from_secs(timestamp);
-        
+
         // Simple formatting - in production you'd want to use chrono or similar
         match datetime.elapsed() {
             Ok(elapsed) => {
@@ -100,8 +117,4 @@ impl ProcessUtils {
             Err(_) => format!("timestamp: {}", timestamp),
         }
     }
-
-
 }
-
- 

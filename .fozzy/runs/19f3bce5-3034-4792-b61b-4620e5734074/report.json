@@ -1,0 +1,230 @@
+{
+  "status": "fail",
+  "mode": "fuzz",
+  "identity": {
+    "runId": "19f3bce5-3034-4792-b61b-4620e5734074",
+    "seed": 1337,
+    "tracePath": "/var/folders/xn/zb2_wvj508d9vx1cr7grpzlm0000gn/T/fozzy-full-fuzz-da88d22b-58d0-4aec-aaf6-ba50f9ec3b0d.trace.fozzy",
+    "reportPath": ".fozzy/runs/19f3bce5-3034-4792-b61b-4620e5734074/report.json",
+    "artifactsDir": ".fozzy/runs/19f3bce5-3034-4792-b61b-4620e5734074"
+  },
+  "startedAt": "2026-02-20T12:59:11.09344Z",
+  "finishedAt": "2026-02-20T12:59:13.11024Z",
+  "durationMs": 2016,
+  "memory": {
+    "allocCount": 2635,
+    "freeCount": 2594,
+    "failedAllocCount": 0,
+    "inUseBytes": 145,
+    "peakBytes": 146,
+    "leakedBytes": 145,
+    "leakedAllocs": 41
+  },
+  "findings": [
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    },
+    {
+      "kind": "hang",
+      "title": "hang",
+      "message": "hang opcode reached"
+    },
+    {
+      "kind": "panic",
+      "title": "panic",
+      "message": "panic opcode reached"
+    }
+  ]
+}

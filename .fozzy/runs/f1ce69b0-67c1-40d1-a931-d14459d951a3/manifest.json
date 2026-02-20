@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "fozzy.run_manifest.v1",
+  "runId": "f1ce69b0-67c1-40d1-a931-d14459d951a3",
+  "mode": "test",
+  "status": "pass",
+  "seed": 1337,
+  "startedAt": "2026-02-20T13:39:42.070909Z",
+  "finishedAt": "2026-02-20T13:39:42.072393Z",
+  "durationMs": 1,
+  "reportPath": ".fozzy/runs/f1ce69b0-67c1-40d1-a931-d14459d951a3/report.json",
+  "artifactsDir": ".fozzy/runs/f1ce69b0-67c1-40d1-a931-d14459d951a3",
+  "findingsCount": 0,
+  "testsPassed": 4,
+  "testsFailed": 0,
+  "testsSkipped": 0,
+  "memoryLeakedBytes": 0,
+  "memoryLeakedAllocs": 0,
+  "memoryPeakBytes": 0
+}

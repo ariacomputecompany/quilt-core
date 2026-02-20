@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::fs;
+use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct CommandResult {
@@ -44,7 +44,10 @@ impl CommandExecutor {
         packages: &[&str],
     ) -> Result<CommandResult, String> {
         if !Self::is_command_available(package_manager) {
-            return Err(format!("Package manager '{}' not available", package_manager));
+            return Err(format!(
+                "Package manager '{}' not available",
+                package_manager
+            ));
         }
 
         let mut cmd = Command::new(package_manager);

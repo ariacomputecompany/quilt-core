@@ -225,7 +225,10 @@ impl ImageStore {
     }
 
     /// Get stored manifest digest for an image reference
-    pub fn get_image_ref(&self, reference: &crate::image::ImageReference) -> Result<Option<String>> {
+    pub fn get_image_ref(
+        &self,
+        reference: &crate::image::ImageReference,
+    ) -> Result<Option<String>> {
         let ref_path = self.ref_path(reference);
         if !ref_path.exists() {
             return Ok(None);
@@ -253,7 +256,10 @@ impl ImageStore {
         }
 
         let mut out = Vec::new();
-        for entry in WalkDir::new(&self.metadata_path).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&self.metadata_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -262,7 +268,10 @@ impl ImageStore {
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            let parts: Vec<_> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+            let parts: Vec<_> = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().to_string())
+                .collect();
             if parts.len() < 3 {
                 continue;
             }

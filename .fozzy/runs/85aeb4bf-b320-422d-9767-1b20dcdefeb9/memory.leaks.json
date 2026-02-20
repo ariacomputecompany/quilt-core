@@ -1,0 +1,272 @@
+[
+  {
+    "allocId": 52,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 90,
+    "bytes": 7,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 221,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 235,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 327,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 373,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 398,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 578,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 585,
+    "bytes": 2,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 620,
+    "bytes": 6,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 664,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 693,
+    "bytes": 7,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 711,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 777,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 852,
+    "bytes": 7,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 956,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1056,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1104,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1139,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1167,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1187,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1228,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1253,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1315,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1362,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1389,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1391,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1426,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1556,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1571,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1603,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1677,
+    "bytes": 2,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1712,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 1933,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2016,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2021,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2035,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2087,
+    "bytes": 1,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2203,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2220,
+    "bytes": 4,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2484,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2538,
+    "bytes": 3,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2571,
+    "bytes": 6,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2591,
+    "bytes": 2,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  },
+  {
+    "allocId": 2706,
+    "bytes": 5,
+    "callsiteHash": "84514d3ad7076a3b5778572c92d78d4af45cfad5858a4ac6dd9f1b8d5998dfb7",
+    "tag": "fuzz_input"
+  }
+]

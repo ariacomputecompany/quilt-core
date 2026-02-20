@@ -60,6 +60,42 @@ service QuiltService {
     rpc ComprehensiveNetworkCleanup (ComprehensiveNetworkCleanupRequest) returns (ComprehensiveNetworkCleanupResponse);
 }
 
+// Quilt-c runtime control-plane compatibility service.
+// This exposes the Kubernetes-like node networking RPCs expected by quiltc agents.
+service QuiltRuntime {
+    rpc ConfigureNodeSubnet (ConfigureNodeSubnetRequest) returns (ConfigureNodeSubnetResponse);
+    rpc InjectRoute (InjectRouteRequest) returns (InjectRouteResponse);
+    rpc RemoveRoute (RemoveRouteRequest) returns (RemoveRouteResponse);
+}
+
+message ConfigureNodeSubnetRequest {
+    string subnet = 1; // Example: "10.42.1.0/24"
+}
+
+message ConfigureNodeSubnetResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message InjectRouteRequest {
+    string destination = 1; // Example: "10.42.2.0/24"
+    string via_interface = 2; // Example: "vxlan100"
+}
+
+message InjectRouteResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message RemoveRouteRequest {
+    string destination = 1; // Example: "10.42.2.0/24"
+}
+
+message RemoveRouteResponse {
+    bool success = 1;
+    string error = 2;
+}
+
 // Container status enumeration
 enum ContainerStatus {
     PENDING = 0;   // Container created but not started

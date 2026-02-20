@@ -1,0 +1,6 @@
+content: <?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="fozzy" tests="1" failures="0" time="0">
+<testcase classname="fozzy" name="9985cd08-3ff2-4f73-9149-ce014537f2ce"/>
+</testsuite>
+
+format: junit

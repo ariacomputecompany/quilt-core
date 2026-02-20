@@ -1,6 +1,6 @@
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
 pub struct FileSystemUtils;
 
@@ -29,7 +29,7 @@ impl FileSystemUtils {
     /// Check if a path is a broken symlink
     pub fn is_broken_symlink<P: AsRef<Path>>(path: P) -> bool {
         let path_ref = path.as_ref();
-        
+
         // Check if it's a symlink
         if let Ok(metadata) = fs::symlink_metadata(path_ref) {
             if metadata.file_type().is_symlink() {
@@ -46,7 +46,7 @@ impl FileSystemUtils {
         description: &str,
     ) -> Result<(), String> {
         let path_ref = path.as_ref();
-        
+
         if path_ref.exists() {
             if path_ref.is_dir() {
                 return Ok(()); // Directory already exists
@@ -78,7 +78,10 @@ impl FileSystemUtils {
 
         // Ensure source exists
         if !src_path.exists() {
-            return Err(format!("Source file does not exist: {}", src_path.display()));
+            return Err(format!(
+                "Source file does not exist: {}",
+                src_path.display()
+            ));
         }
 
         // Create parent directory if it doesn't exist
@@ -116,21 +119,11 @@ impl FileSystemUtils {
         }
 
         if path_ref.is_dir() {
-            fs::remove_dir_all(path_ref).map_err(|e| {
-                format!(
-                    "Failed to remove directory '{}': {}",
-                    path_ref.display(),
-                    e
-                )
-            })
+            fs::remove_dir_all(path_ref)
+                .map_err(|e| format!("Failed to remove directory '{}': {}", path_ref.display(), e))
         } else {
-            fs::remove_file(path_ref).map_err(|e| {
-                format!(
-                    "Failed to remove file '{}': {}",
-                    path_ref.display(),
-                    e
-                )
-            })
+            fs::remove_file(path_ref)
+                .map_err(|e| format!("Failed to remove file '{}': {}", path_ref.display(), e))
         }
     }
 
@@ -152,27 +145,16 @@ impl FileSystemUtils {
         path.as_ref().exists()
     }
 
-
     /// Create a file with specific content
     pub fn write_file<P: AsRef<Path>>(path: P, content: &str) -> Result<(), String> {
-        fs::write(path.as_ref(), content).map_err(|e| {
-            format!(
-                "Failed to write file '{}': {}",
-                path.as_ref().display(),
-                e
-            )
-        })
+        fs::write(path.as_ref(), content)
+            .map_err(|e| format!("Failed to write file '{}': {}", path.as_ref().display(), e))
     }
 
     /// Read file content as string
     pub fn read_file<P: AsRef<Path>>(path: P) -> Result<String, String> {
-        fs::read_to_string(path.as_ref()).map_err(|e| {
-            format!(
-                "Failed to read file '{}': {}",
-                path.as_ref().display(),
-                e
-            )
-        })
+        fs::read_to_string(path.as_ref())
+            .map_err(|e| format!("Failed to read file '{}': {}", path.as_ref().display(), e))
     }
 
     /// Set file permissions
@@ -194,7 +176,7 @@ impl FileSystemUtils {
             // Add execute permission for owner, group, and others
             let mode = permissions.mode();
             permissions.set_mode(mode | 0o111);
-            
+
             fs::set_permissions(path.as_ref(), permissions).map_err(|e| {
                 format!(
                     "Failed to make file executable '{}': {}",
@@ -203,13 +185,9 @@ impl FileSystemUtils {
                 )
             })
         } else {
-            Err(format!(
-                "File does not exist: {}",
-                path.as_ref().display()
-            ))
+            Err(format!("File does not exist: {}", path.as_ref().display()))
         }
     }
-
 
     /// List directory contents
     pub fn list_dir<P: AsRef<Path>>(path: P) -> Result<Vec<PathBuf>, String> {
@@ -235,7 +213,6 @@ impl FileSystemUtils {
 
         Ok(paths)
     }
-
 
     /// Join path components
     pub fn join<P: AsRef<Path>, Q: AsRef<Path>>(base: P, component: Q) -> PathBuf {

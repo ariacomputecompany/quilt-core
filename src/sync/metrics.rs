@@ -1,7 +1,9 @@
-use sqlx::SqlitePool;
+use crate::daemon::metrics::{
+    ContainerMetrics, CpuMetrics, DiskMetrics, MemoryMetrics, NetworkMetrics,
+};
 use crate::sync::error::{SyncError, SyncResult};
-use crate::daemon::metrics::{ContainerMetrics, CpuMetrics, MemoryMetrics, NetworkMetrics, DiskMetrics};
 use crate::utils::console::ConsoleLogger;
+use sqlx::SqlitePool;
 
 pub struct MetricsStore {
     pool: SqlitePool,
@@ -58,21 +60,28 @@ impl MetricsStore {
         match result {
             Ok(_) => Ok(()),
             Err(e) => {
-                ConsoleLogger::warning(&format!("Failed to store metrics for container {}: {}", 
-                    metrics.container_id, e));
+                ConsoleLogger::warning(&format!(
+                    "Failed to store metrics for container {}: {}",
+                    metrics.container_id, e
+                ));
                 Err(SyncError::Database(e))
             }
         }
     }
 
     /// Get latest metrics for a container
-    pub async fn get_latest_metrics(&self, container_id: &str) -> SyncResult<Option<ContainerMetrics>> {
-        let row = sqlx::query_as::<_, MetricsRow>(r#"
+    pub async fn get_latest_metrics(
+        &self,
+        container_id: &str,
+    ) -> SyncResult<Option<ContainerMetrics>> {
+        let row = sqlx::query_as::<_, MetricsRow>(
+            r#"
             SELECT * FROM container_metrics 
             WHERE container_id = ?1 
             ORDER BY timestamp DESC 
             LIMIT 1
-        "#)
+        "#,
+        )
         .bind(container_id)
         .fetch_optional(&self.pool)
         .await?;
@@ -82,20 +91,22 @@ impl MetricsStore {
 
     /// Get metrics history for a container with time range
     pub async fn get_metrics_history(
-        &self, 
-        container_id: &str, 
-        start_time: u64, 
+        &self,
+        container_id: &str,
+        start_time: u64,
         end_time: u64,
-        limit: Option<u32>
+        limit: Option<u32>,
     ) -> SyncResult<Vec<ContainerMetrics>> {
         let limit = limit.unwrap_or(1000).min(10000); // Cap at 10k records
 
-        let rows = sqlx::query_as::<_, MetricsRow>(r#"
+        let rows = sqlx::query_as::<_, MetricsRow>(
+            r#"
             SELECT * FROM container_metrics 
             WHERE container_id = ?1 AND timestamp >= ?2 AND timestamp <= ?3
             ORDER BY timestamp DESC 
             LIMIT ?4
-        "#)
+        "#,
+        )
         .bind(container_id)
         .bind(start_time as i64)
         .bind(end_time as i64)
@@ -111,12 +122,15 @@ impl MetricsStore {
         let cutoff_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64 - (retention_days as u64 * 24 * 60 * 60 * 1000);
+            .as_millis() as u64
+            - (retention_days as u64 * 24 * 60 * 60 * 1000);
 
-        let result = sqlx::query(r#"
+        let result = sqlx::query(
+            r#"
             DELETE FROM container_metrics 
             WHERE timestamp < ?1
-        "#)
+        "#,
+        )
         .bind(cutoff_time as i64)
         .execute(&self.pool)
         .await?;

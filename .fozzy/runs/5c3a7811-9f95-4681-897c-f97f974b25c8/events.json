@@ -1,0 +1,23 @@
+[
+  {
+    "time_ms": 1,
+    "name": "op",
+    "fields": {
+      "opcode": "1c"
+    }
+  },
+  {
+    "time_ms": 2,
+    "name": "op",
+    "fields": {
+      "opcode": "8f"
+    }
+  },
+  {
+    "time_ms": 3,
+    "name": "op",
+    "fields": {
+      "opcode": "ff"
+    }
+  }
+]

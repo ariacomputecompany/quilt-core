@@ -1,0 +1,23 @@
+{
+  "status": "pass",
+  "mode": "replay",
+  "identity": {
+    "runId": "f034bd79-b179-4ab1-9b48-44fcc69b0659",
+    "seed": 7268959301112737157,
+    "tracePath": ".fozzy/quilt-runtime.trace.fozzy",
+    "reportPath": ".fozzy/runs/f034bd79-b179-4ab1-9b48-44fcc69b0659/report.json",
+    "artifactsDir": ".fozzy/runs/f034bd79-b179-4ab1-9b48-44fcc69b0659"
+  },
+  "startedAt": "2026-02-20T13:40:02.187002Z",
+  "finishedAt": "2026-02-20T13:40:02.187161Z",
+  "durationMs": 0,
+  "memory": {
+    "allocCount": 0,
+    "freeCount": 0,
+    "failedAllocCount": 0,
+    "inUseBytes": 0,
+    "peakBytes": 0,
+    "leakedBytes": 0,
+    "leakedAllocs": 0
+  }
+}

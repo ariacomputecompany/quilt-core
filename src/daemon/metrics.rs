@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerMetrics {
@@ -62,7 +62,11 @@ impl MetricsCollector {
         }
     }
 
-    pub fn collect_container_metrics(&self, container_id: &str, pid: Option<i32>) -> Result<ContainerMetrics, String> {
+    pub fn collect_container_metrics(
+        &self,
+        container_id: &str,
+        pid: Option<i32>,
+    ) -> Result<ContainerMetrics, String> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -104,7 +108,9 @@ impl MetricsCollector {
                             "system_usec" => metrics.system_usec = parts[1].parse().unwrap_or(0),
                             "nr_periods" => metrics.nr_periods = parts[1].parse().unwrap_or(0),
                             "nr_throttled" => metrics.nr_throttled = parts[1].parse().unwrap_or(0),
-                            "throttled_usec" => metrics.throttled_usec = parts[1].parse().unwrap_or(0),
+                            "throttled_usec" => {
+                                metrics.throttled_usec = parts[1].parse().unwrap_or(0)
+                            }
                             _ => {}
                         }
                     }
@@ -117,7 +123,8 @@ impl MetricsCollector {
                 .join(container_id);
 
             if let Ok(usage) = fs::read_to_string(cpu_acct_path.join("cpuacct.usage")) {
-                metrics.usage_usec = usage.trim().parse::<u64>().unwrap_or(0) / 1000; // Convert ns to us
+                metrics.usage_usec = usage.trim().parse::<u64>().unwrap_or(0) / 1000;
+                // Convert ns to us
             }
 
             if let Ok(stat) = fs::read_to_string(cpu_acct_path.join("cpuacct.stat")) {
@@ -125,8 +132,12 @@ impl MetricsCollector {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() == 2 {
                         match parts[0] {
-                            "user" => metrics.user_usec = parts[1].parse::<u64>().unwrap_or(0) * 10000, // jiffies to us
-                            "system" => metrics.system_usec = parts[1].parse::<u64>().unwrap_or(0) * 10000,
+                            "user" => {
+                                metrics.user_usec = parts[1].parse::<u64>().unwrap_or(0) * 10000
+                            } // jiffies to us
+                            "system" => {
+                                metrics.system_usec = parts[1].parse::<u64>().unwrap_or(0) * 10000
+                            }
                             _ => {}
                         }
                     }
@@ -242,9 +253,7 @@ impl MetricsCollector {
 
         if let Some(pid) = pid {
             // Read I/O stats from /proc/[pid]/io
-            let io_path = Path::new(&self.proc_root)
-                .join(pid.to_string())
-                .join("io");
+            let io_path = Path::new(&self.proc_root).join(pid.to_string()).join("io");
 
             if let Ok(content) = fs::read_to_string(&io_path) {
                 for line in content.lines() {
@@ -290,19 +299,19 @@ impl SystemMetrics {
 
         // Get system memory info
         let (memory_used_mb, memory_total_mb) = Self::get_memory_info()?;
-        
+
         // Get CPU count
         let cpu_count = num_cpus::get() as u64;
-        
+
         // Get load average
         let load_average = Self::get_load_average()?;
-        
+
         // Get uptime
         let uptime_seconds = Self::get_uptime()?;
 
         Ok(SystemMetrics {
             timestamp,
-            containers_total: 0, // Will be filled by caller
+            containers_total: 0,   // Will be filled by caller
             containers_running: 0, // Will be filled by caller
             containers_stopped: 0, // Will be filled by caller
             memory_used_mb,
@@ -322,12 +331,14 @@ impl SystemMetrics {
 
         for line in meminfo.lines() {
             if line.starts_with("MemTotal:") {
-                total_kb = line.split_whitespace()
+                total_kb = line
+                    .split_whitespace()
                     .nth(1)
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);
             } else if line.starts_with("MemAvailable:") {
-                available_kb = line.split_whitespace()
+                available_kb = line
+                    .split_whitespace()
                     .nth(1)
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);

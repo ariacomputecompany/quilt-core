@@ -1,7 +1,7 @@
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_BUFFER_SIZE: usize = 1000;
@@ -87,12 +87,12 @@ impl EventRingBuffer {
     /// Add an event to the ring buffer
     pub fn push(&self, event: ContainerEvent) {
         let mut buffer = self.buffer.write();
-        
+
         // Remove oldest events if at capacity
         while buffer.len() >= self.max_size {
             buffer.pop_front();
         }
-        
+
         buffer.push_back(event);
     }
 
@@ -112,7 +112,7 @@ impl EventRingBuffer {
                 .as_millis() as u64,
             attributes: attributes.unwrap_or_default(),
         };
-        
+
         self.push(event);
     }
 
@@ -126,7 +126,7 @@ impl EventRingBuffer {
         since_timestamp: Option<u64>,
     ) -> Vec<ContainerEvent> {
         let buffer = self.buffer.read();
-        
+
         buffer
             .iter()
             .rev()
@@ -137,21 +137,21 @@ impl EventRingBuffer {
                         return false;
                     }
                 }
-                
+
                 // Filter by event types
                 if let Some(types) = event_types {
                     if !types.is_empty() && !types.contains(&event.event_type) {
                         return false;
                     }
                 }
-                
+
                 // Filter by timestamp
                 if let Some(since) = since_timestamp {
                     if event.timestamp < since {
                         return false;
                     }
                 }
-                
+
                 true
             })
             .cloned()
@@ -175,19 +175,15 @@ mod tests {
     #[test]
     fn test_ring_buffer_capacity() {
         let buffer = EventRingBuffer::new(Some(3));
-        
+
         // Add 4 events to a buffer with capacity 3
         for i in 0..4 {
-            buffer.emit(
-                EventType::Created,
-                &format!("container-{}", i),
-                None,
-            );
+            buffer.emit(EventType::Created, &format!("container-{}", i), None);
         }
-        
+
         // Should only have 3 events (oldest was removed)
         assert_eq!(buffer.len(), 3);
-        
+
         let events = buffer.get_all();
         assert_eq!(events[0].container_id, "container-3");
         assert_eq!(events[1].container_id, "container-2");
@@ -197,26 +193,18 @@ mod tests {
     #[test]
     fn test_event_filtering() {
         let buffer = EventRingBuffer::new(None);
-        
+
         buffer.emit(EventType::Created, "container-1", None);
         buffer.emit(EventType::Started, "container-1", None);
         buffer.emit(EventType::Created, "container-2", None);
         buffer.emit(EventType::Died, "container-1", None);
-        
+
         // Filter by container ID
-        let events = buffer.get_filtered(
-            Some(&["container-1".to_string()]),
-            None,
-            None,
-        );
+        let events = buffer.get_filtered(Some(&["container-1".to_string()]), None, None);
         assert_eq!(events.len(), 3);
-        
+
         // Filter by event type
-        let events = buffer.get_filtered(
-            None,
-            Some(&[EventType::Created]),
-            None,
-        );
+        let events = buffer.get_filtered(None, Some(&[EventType::Created]), None);
         assert_eq!(events.len(), 2);
     }
 }

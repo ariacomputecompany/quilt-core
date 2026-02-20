@@ -1,3 +1,3 @@
 pub mod icc;
 
-pub use icc::IccCommands; 
+pub use icc::IccCommands;

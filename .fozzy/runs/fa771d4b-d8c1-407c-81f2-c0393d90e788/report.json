@@ -1,0 +1,22 @@
+{
+  "status": "pass",
+  "mode": "explore",
+  "identity": {
+    "runId": "fa771d4b-d8c1-407c-81f2-c0393d90e788",
+    "seed": 1337,
+    "reportPath": ".fozzy/runs/fa771d4b-d8c1-407c-81f2-c0393d90e788/report.json",
+    "artifactsDir": ".fozzy/runs/fa771d4b-d8c1-407c-81f2-c0393d90e788"
+  },
+  "startedAt": "2026-02-20T13:16:07.290333Z",
+  "finishedAt": "2026-02-20T13:16:07.290874Z",
+  "durationMs": 0,
+  "memory": {
+    "allocCount": 0,
+    "freeCount": 0,
+    "failedAllocCount": 0,
+    "inUseBytes": 0,
+    "peakBytes": 0,
+    "leakedBytes": 0,
+    "leakedAllocs": 0
+  }
+}

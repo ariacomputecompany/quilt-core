@@ -1,0 +1,29 @@
+{
+  "status": "fail",
+  "mode": "run",
+  "identity": {
+    "runId": "a6379e53-427a-4936-8a27-be7ca163452c",
+    "seed": 6105222382952808099,
+    "reportPath": ".fozzy/runs/a6379e53-427a-4936-8a27-be7ca163452c/report.json",
+    "artifactsDir": ".fozzy/runs/a6379e53-427a-4936-8a27-be7ca163452c"
+  },
+  "startedAt": "2026-02-20T13:40:24.082963Z",
+  "finishedAt": "2026-02-20T13:40:24.083262Z",
+  "durationMs": 0,
+  "memory": {
+    "allocCount": 0,
+    "freeCount": 0,
+    "failedAllocCount": 0,
+    "inUseBytes": 0,
+    "peakBytes": 0,
+    "leakedBytes": 0,
+    "leakedAllocs": 0
+  },
+  "findings": [
+    {
+      "kind": "checker",
+      "title": "http_when_backend",
+      "message": "http_when is only supported with scripted http backend"
+    }
+  ]
+}

@@ -2,12 +2,12 @@
 // Production-ready event-driven container readiness system
 
 use crate::utils::console::ConsoleLogger;
+use inotify::{Inotify, WatchMask};
 use nix::unistd::Pid;
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, SystemTime};
-use inotify::{Inotify, WatchMask};
 
 #[derive(Debug, Clone)]
 pub struct ReadinessConfig {
@@ -19,8 +19,8 @@ pub struct ReadinessConfig {
 impl Default for ReadinessConfig {
     fn default() -> Self {
         Self {
-            namespace_timeout_ms: 5000,  // 5s for namespaces to be ready
-            exec_test_timeout_ms: 3000,  // 3s for exec test
+            namespace_timeout_ms: 5000,    // 5s for namespaces to be ready
+            exec_test_timeout_ms: 3000,    // 3s for exec test
             self_signal_timeout_ms: 10000, // 10s for container self-signal
         }
     }
@@ -37,46 +37,68 @@ impl ContainerReadinessManager {
 
     /// Event-driven container readiness verification - NO POLLING
     pub fn wait_for_container_ready(
-        &self, 
-        container_id: &str, 
-        pid: Pid, 
-        rootfs_path: &str
+        &self,
+        container_id: &str,
+        pid: Pid,
+        rootfs_path: &str,
     ) -> Result<(), String> {
-        ConsoleLogger::progress(&format!("🔍 Starting event-driven readiness verification for container {}", container_id));
+        ConsoleLogger::progress(&format!(
+            "🔍 Starting event-driven readiness verification for container {}",
+            container_id
+        ));
         let overall_start = SystemTime::now();
 
         // Use the config timeouts for comprehensive readiness checks
-        self.wait_for_namespaces_ready(pid, Duration::from_millis(self.config.namespace_timeout_ms))?;
-        
+        self.wait_for_namespaces_ready(
+            pid,
+            Duration::from_millis(self.config.namespace_timeout_ms),
+        )?;
+
         // EVENT-DRIVEN: Check if process is actually running
         // No sleep, just immediate verification
         if !crate::utils::process::ProcessUtils::is_process_running(pid) {
-            return Err(format!("Process {} does not exist", crate::utils::process::ProcessUtils::pid_to_i32(pid)));
+            return Err(format!(
+                "Process {} does not exist",
+                crate::utils::process::ProcessUtils::pid_to_i32(pid)
+            ));
         }
-        
+
         // Verify exec capability with configured timeout
         self.verify_exec_capability(pid, Duration::from_millis(self.config.exec_test_timeout_ms))?;
-        
+
         // Create readiness script in container
         self.create_readiness_script(rootfs_path, container_id)?;
-        
+
         // Wait for container self-signal with configured timeout
-        self.wait_for_container_self_signal(container_id, rootfs_path, Duration::from_millis(self.config.self_signal_timeout_ms))?;
-        
-        ConsoleLogger::debug(&format!("✅ Process {} is alive and responsive", crate::utils::process::ProcessUtils::pid_to_i32(pid)));
+        self.wait_for_container_self_signal(
+            container_id,
+            rootfs_path,
+            Duration::from_millis(self.config.self_signal_timeout_ms),
+        )?;
+
+        ConsoleLogger::debug(&format!(
+            "✅ Process {} is alive and responsive",
+            crate::utils::process::ProcessUtils::pid_to_i32(pid)
+        ));
 
         let total_time = overall_start.elapsed().unwrap_or_default();
-        ConsoleLogger::success(&format!("✅ Container {} ready in {:?} (event-driven)", container_id, total_time));
+        ConsoleLogger::success(&format!(
+            "✅ Container {} ready in {:?} (event-driven)",
+            container_id, total_time
+        ));
         Ok(())
     }
 
     /// Wait for all required namespaces using inotify - NO POLLING
     fn wait_for_namespaces_ready(&self, pid: Pid, timeout: Duration) -> Result<(), String> {
-        ConsoleLogger::debug(&format!("🔍 Waiting for namespaces to be ready for PID {}", pid));
+        ConsoleLogger::debug(&format!(
+            "🔍 Waiting for namespaces to be ready for PID {}",
+            pid
+        ));
         let start_time = SystemTime::now();
 
         let proc_ns_path = format!("/proc/{}/ns", pid);
-        
+
         // Required namespaces for container operation
         let required_namespaces = ["pid", "mnt", "net", "uts", "ipc"];
         let mut ready_namespaces = HashSet::new();
@@ -97,17 +119,22 @@ impl ContainerReadinessManager {
         }
 
         // Setup inotify to watch for namespace creation
-        let mut inotify = Inotify::init()
-            .map_err(|e| format!("Failed to initialize inotify: {}", e))?;
+        let mut inotify =
+            Inotify::init().map_err(|e| format!("Failed to initialize inotify: {}", e))?;
 
         // Watch the /proc/PID/ns directory for new namespace files
-        inotify.watches().add(&proc_ns_path, WatchMask::CREATE | WatchMask::MOVED_TO)
+        inotify
+            .watches()
+            .add(&proc_ns_path, WatchMask::CREATE | WatchMask::MOVED_TO)
             .map_err(|e| format!("Failed to add inotify watch for {}: {}", proc_ns_path, e))?;
 
-        ConsoleLogger::debug(&format!("🔍 Watching {} for namespace creation events", proc_ns_path));
+        ConsoleLogger::debug(&format!(
+            "🔍 Watching {} for namespace creation events",
+            proc_ns_path
+        ));
 
         // Event-driven waiting with timeout
-        
+
         while ready_namespaces.len() < required_namespaces.len() {
             // Check if we've exceeded timeout
             if start_time.elapsed().unwrap_or_default() > timeout {
@@ -115,18 +142,20 @@ impl ContainerReadinessManager {
                     "Namespace readiness timeout after {:?}. Ready: {:?}, Missing: {:?}",
                     timeout,
                     ready_namespaces,
-                    required_namespaces.iter()
+                    required_namespaces
+                        .iter()
                         .filter(|ns| !ready_namespaces.contains(**ns))
                         .collect::<Vec<_>>()
                 ));
             }
 
             // Wait for inotify events (blocking with remaining timeout)
-            let _remaining_timeout = timeout.saturating_sub(start_time.elapsed().unwrap_or_default());
-            
+            let _remaining_timeout =
+                timeout.saturating_sub(start_time.elapsed().unwrap_or_default());
+
             // Use a small buffer for inotify events
             let mut buffer = [0; 1024];
-            
+
             // Set a reasonable poll timeout (100ms) to allow timeout checking
             match inotify.read_events(&mut buffer) {
                 Ok(events) => {
@@ -135,7 +164,10 @@ impl ContainerReadinessManager {
                             let namespace_name = name.to_string_lossy().to_string();
                             if required_namespaces.contains(&namespace_name.as_str()) {
                                 ready_namespaces.insert(namespace_name.clone());
-                                ConsoleLogger::debug(&format!("📁 Namespace {} ready", namespace_name));
+                                ConsoleLogger::debug(&format!(
+                                    "📁 Namespace {} ready",
+                                    namespace_name
+                                ));
                             }
                         }
                     }
@@ -161,7 +193,8 @@ impl ContainerReadinessManager {
         let script_path = format!("{}/usr/local/bin/quilt_readiness_check.sh", rootfs_path);
         let ready_signal_path = format!("/tmp/quilt_ready_{}", container_id);
 
-        let script_content = format!(r#"#!/bin/sh
+        let script_content = format!(
+            r#"#!/bin/sh
 # Quilt Container Readiness Verification Script
 # This script runs inside the container to verify readiness
 
@@ -199,11 +232,17 @@ fi
 echo "ready" > "{ready_signal_path}"
 echo "✅ Container {container_id} readiness check PASSED"
 echo "✅ Ready signal sent to {ready_signal_path}"
-"#, container_id = container_id, ready_signal_path = ready_signal_path);
+"#,
+            container_id = container_id,
+            ready_signal_path = ready_signal_path
+        );
 
         // Ensure the directory exists
         let script_dir = format!("{}/usr/local/bin", rootfs_path);
-        crate::utils::filesystem::FileSystemUtils::create_dir_all_with_logging(&script_dir, "readiness script directory")?;
+        crate::utils::filesystem::FileSystemUtils::create_dir_all_with_logging(
+            &script_dir,
+            "readiness script directory",
+        )?;
 
         // Write the script
         crate::utils::filesystem::FileSystemUtils::write_file(&script_path, &script_content)?;
@@ -216,11 +255,19 @@ echo "✅ Ready signal sent to {ready_signal_path}"
     }
 
     /// Wait for container to signal readiness via file creation - NO POLLING
-    fn wait_for_container_self_signal(&self, container_id: &str, _rootfs_path: &str, timeout: Duration) -> Result<(), String> {
+    fn wait_for_container_self_signal(
+        &self,
+        container_id: &str,
+        _rootfs_path: &str,
+        timeout: Duration,
+    ) -> Result<(), String> {
         let ready_signal_path = format!("/tmp/quilt_ready_{}", container_id);
         let start_time = SystemTime::now();
-        
-        ConsoleLogger::debug(&format!("🔍 Waiting for container self-signal at {}", ready_signal_path));
+
+        ConsoleLogger::debug(&format!(
+            "🔍 Waiting for container self-signal at {}",
+            ready_signal_path
+        ));
 
         // Check if signal file already exists
         if Path::new(&ready_signal_path).exists() {
@@ -233,7 +280,9 @@ echo "✅ Ready signal sent to {ready_signal_path}"
             .map_err(|e| format!("Failed to initialize inotify for self-signal: {}", e))?;
 
         // Watch /tmp directory for file creation
-        inotify.watches().add("/tmp", WatchMask::CREATE | WatchMask::MOVED_TO)
+        inotify
+            .watches()
+            .add("/tmp", WatchMask::CREATE | WatchMask::MOVED_TO)
             .map_err(|e| format!("Failed to add inotify watch for /tmp: {}", e))?;
 
         // Use passed timeout parameter
@@ -257,7 +306,10 @@ echo "✅ Ready signal sent to {ready_signal_path}"
                             let filename = name.to_string_lossy();
                             if filename == expected_filename {
                                 let elapsed = start_time.elapsed().unwrap_or_default();
-                                ConsoleLogger::success(&format!("✅ Container self-signal received in {:?}", elapsed));
+                                ConsoleLogger::success(&format!(
+                                    "✅ Container self-signal received in {:?}",
+                                    elapsed
+                                ));
                                 return Ok(());
                             }
                         }
@@ -269,13 +321,19 @@ echo "✅ Ready signal sent to {ready_signal_path}"
                     continue;
                 }
                 Err(e) => {
-                    return Err(format!("Inotify read error while waiting for self-signal: {}", e));
+                    return Err(format!(
+                        "Inotify read error while waiting for self-signal: {}",
+                        e
+                    ));
                 }
             }
         }
 
         let elapsed = start_time.elapsed().unwrap_or_default();
-        ConsoleLogger::success(&format!("✅ Container self-signal detected in {:?}", elapsed));
+        ConsoleLogger::success(&format!(
+            "✅ Container self-signal detected in {:?}",
+            elapsed
+        ));
         Ok(())
     }
 
@@ -286,15 +344,26 @@ echo "✅ Ready signal sent to {ready_signal_path}"
 
         // Check if we have enough time for the exec test
         if start_time.elapsed().unwrap_or_default() > timeout {
-            return Err(format!("Exec capability test timeout before attempt: {:?}", timeout));
+            return Err(format!(
+                "Exec capability test timeout before attempt: {:?}",
+                timeout
+            ));
         }
-        
+
         // Single attempt - if namespaces are ready and container signaled, this should work
         let test_result = Command::new("nsenter")
             .args(&[
-                "-t", &pid.as_raw().to_string(),
-                "-p", "-m", "-n", "-u", "-i",
-                "--", "/bin/sh", "-c", "echo exec_ready"
+                "-t",
+                &pid.as_raw().to_string(),
+                "-p",
+                "-m",
+                "-n",
+                "-u",
+                "-i",
+                "--",
+                "/bin/sh",
+                "-c",
+                "echo exec_ready",
             ])
             .output();
 
@@ -303,16 +372,25 @@ echo "✅ Ready signal sent to {ready_signal_path}"
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 if stdout.trim() == "exec_ready" {
                     let elapsed = start_time.elapsed().unwrap_or_default();
-                    ConsoleLogger::success(&format!("✅ Exec capability verified in {:?}", elapsed));
+                    ConsoleLogger::success(&format!(
+                        "✅ Exec capability verified in {:?}",
+                        elapsed
+                    ));
                     return Ok(());
                 } else {
-                    return Err(format!("Exec test returned unexpected output: '{}'", stdout.trim()));
+                    return Err(format!(
+                        "Exec test returned unexpected output: '{}'",
+                        stdout.trim()
+                    ));
                 }
             }
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Exec test failed with exit code {}: {}", 
-                                 output.status.code().unwrap_or(-1), stderr.trim()));
+                return Err(format!(
+                    "Exec test failed with exit code {}: {}",
+                    output.status.code().unwrap_or(-1),
+                    stderr.trim()
+                ));
             }
             Err(e) => {
                 return Err(format!("Failed to execute nsenter for exec test: {}", e));
@@ -321,7 +399,11 @@ echo "✅ Ready signal sent to {ready_signal_path}"
     }
 
     /// Enhanced container startup with readiness integration
-    pub fn inject_readiness_into_command(&self, _container_id: &str, original_command: Vec<String>) -> Vec<String> {
+    pub fn inject_readiness_into_command(
+        &self,
+        _container_id: &str,
+        original_command: Vec<String>,
+    ) -> Vec<String> {
         // SIMPLIFIED: For immediate testing, don't inject complex readiness scripts
         // Just return the original command to test our network fixes
         ConsoleLogger::debug("Using simplified readiness system for testing");
@@ -334,9 +416,15 @@ pub fn cleanup_readiness_signal(container_id: &str) {
     let ready_signal_path = format!("/tmp/quilt_ready_{}", container_id);
     if crate::utils::filesystem::FileSystemUtils::exists(&ready_signal_path) {
         if let Err(e) = crate::utils::filesystem::FileSystemUtils::remove_path(&ready_signal_path) {
-            ConsoleLogger::warning(&format!("Failed to cleanup readiness signal {}: {}", ready_signal_path, e));
+            ConsoleLogger::warning(&format!(
+                "Failed to cleanup readiness signal {}: {}",
+                ready_signal_path, e
+            ));
         } else {
-            ConsoleLogger::debug(&format!("🧹 Cleaned up readiness signal: {}", ready_signal_path));
+            ConsoleLogger::debug(&format!(
+                "🧹 Cleaned up readiness signal: {}",
+                ready_signal_path
+            ));
         }
     }
-} 
+}
