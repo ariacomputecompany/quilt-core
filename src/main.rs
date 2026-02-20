@@ -5,6 +5,7 @@ mod utils;
 mod icc;
 mod sync;
 mod grpc;
+mod usage;
 
 use utils::console::ConsoleLogger;
 use utils::filesystem::FileSystemUtils;
