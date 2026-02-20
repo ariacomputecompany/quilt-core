@@ -20,7 +20,10 @@ impl SchemaManager {
         self.create_volumes_table().await?;
         self.create_container_mounts_table().await?;
         self.create_container_metrics_table().await?;
+        self.create_dns_entries_table().await?;
         self.create_tenants_table().await?;
+        self.create_tenant_quotas_table().await?;
+        self.create_storage_measurements_table().await?;
         self.create_master_containers_table().await?;
         self.create_terminal_sessions_table().await?;
         self.create_images_table().await?;
@@ -264,12 +267,15 @@ impl SchemaManager {
             "CREATE INDEX IF NOT EXISTS idx_container_mounts_type ON container_mounts(mount_type)",
             "CREATE INDEX IF NOT EXISTS idx_container_metrics_container_time ON container_metrics(container_id, timestamp)",
             "CREATE INDEX IF NOT EXISTS idx_container_metrics_timestamp ON container_metrics(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_dns_entries_tenant ON dns_entries(tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_master_containers_tenant ON master_containers(tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_terminal_sessions_tenant ON terminal_sessions(tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_terminal_sessions_state ON terminal_sessions(state)",
             "CREATE INDEX IF NOT EXISTS idx_images_tenant ON images(tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_images_ref ON images(registry, repository, tag)",
             "CREATE INDEX IF NOT EXISTS idx_icc_connections_status ON icc_connections(status)",
+            "CREATE INDEX IF NOT EXISTS idx_tenant_quotas_tenant ON tenant_quotas(tenant_id)",
+            "CREATE INDEX IF NOT EXISTS idx_storage_measurements_tenant_time ON storage_measurements(tenant_id, measured_at)",
             "CREATE INDEX IF NOT EXISTS idx_nodes_cluster_tenant ON nodes(cluster_id, tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_workloads_cluster_tenant ON workloads(cluster_id, tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_placements_workload ON placements(workload_id, replica_index)",
@@ -292,6 +298,65 @@ impl SchemaManager {
                 updated_at INTEGER NOT NULL
             )
         "#).execute(&self.pool).await?;
+
+        Ok(())
+    }
+
+    async fn create_tenant_quotas_table(&self) -> SyncResult<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS tenant_quotas (
+                tenant_id TEXT PRIMARY KEY,
+                storage_used_gb REAL NOT NULL DEFAULT 0.0,
+                storage_quota_gb REAL NOT NULL DEFAULT 100.0,
+                updated_at INTEGER NOT NULL
+            )
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn create_storage_measurements_table(&self) -> SyncResult<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS storage_measurements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id TEXT NOT NULL,
+                measured_at INTEGER NOT NULL,
+                volumes_gb REAL NOT NULL DEFAULT 0.0,
+                containers_gb REAL NOT NULL DEFAULT 0.0,
+                total_gb REAL NOT NULL DEFAULT 0.0,
+                measurement_type TEXT NOT NULL DEFAULT 'reconciliation'
+            )
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn create_dns_entries_table(&self) -> SyncResult<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS dns_entries (
+                id TEXT PRIMARY KEY,
+                container_id TEXT NOT NULL,
+                container_name TEXT NOT NULL,
+                ip_address TEXT NOT NULL,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                ttl INTEGER NOT NULL DEFAULT 300,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY(container_id) REFERENCES containers(id) ON DELETE CASCADE
+            )
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -584,6 +649,8 @@ impl SchemaManager {
             "ALTER TABLE containers ADD COLUMN project_id TEXT",
             "ALTER TABLE containers ADD COLUMN strict BOOLEAN NOT NULL DEFAULT 0",
             "ALTER TABLE containers ADD COLUMN labels TEXT DEFAULT '{}'",
+            "ALTER TABLE containers ADD COLUMN rootfs_size_gb REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE containers ADD COLUMN rootfs_measured_at INTEGER",
             "ALTER TABLE volumes ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'",
             "ALTER TABLE volumes ADD COLUMN actual_size_gb REAL NOT NULL DEFAULT 0.0",
             "ALTER TABLE volumes ADD COLUMN last_measured_at INTEGER",

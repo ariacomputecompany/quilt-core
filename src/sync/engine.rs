@@ -2,6 +2,7 @@ use crate::sync::{
     cleanup::CleanupService,
     connection::ConnectionManager,
     containers::{ContainerConfig, ContainerManager, ContainerState, ContainerStatus},
+    dns::{DnsEntry, DnsEntryManager},
     error::{SyncError, SyncResult},
     icc_connections::{IccConnection, IccConnectionManager},
     images::{ImageRecord, ImageStore},
@@ -10,6 +11,7 @@ use crate::sync::{
     network::{NetworkAllocation, NetworkConfig, NetworkManager},
     nodes::{Cluster, ClusterManager, Node, NodeAllocation, NodeManager},
     schema::SchemaManager,
+    storage_monitor::StorageMonitor,
     terminal_sessions::{
         CreateSessionRequest, TerminalSession, TerminalSessionManager, TerminalSessionState,
     },
@@ -29,6 +31,8 @@ pub struct SyncEngine {
     volume_manager: Arc<VolumeManager>,
     pub monitor_service: Arc<ProcessMonitorService>,
     pub cleanup_service: Arc<CleanupService>,
+    dns_manager: Arc<DnsEntryManager>,
+    storage_monitor: Arc<StorageMonitor>,
     image_store: Arc<ImageStore>,
     icc_connection_manager: Arc<IccConnectionManager>,
     master_container_manager: Arc<MasterContainerManager>,
@@ -50,6 +54,8 @@ impl Clone for SyncEngine {
             volume_manager: Arc::clone(&self.volume_manager),
             monitor_service: Arc::clone(&self.monitor_service),
             cleanup_service: Arc::clone(&self.cleanup_service),
+            dns_manager: Arc::clone(&self.dns_manager),
+            storage_monitor: Arc::clone(&self.storage_monitor),
             image_store: Arc::clone(&self.image_store),
             icc_connection_manager: Arc::clone(&self.icc_connection_manager),
             master_container_manager: Arc::clone(&self.master_container_manager),
@@ -79,35 +85,15 @@ impl SyncEngine {
         let monitor_service = Arc::new(ProcessMonitorService::new(
             connection_manager.pool().clone(),
         ));
-        let image_store = Arc::new(ImageStore::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
-        let icc_connection_manager = Arc::new(IccConnectionManager::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
-        let master_container_manager = Arc::new(MasterContainerManager::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
-        let terminal_session_manager = Arc::new(TerminalSessionManager::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
-        let cluster_manager = Arc::new(ClusterManager::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
-        let node_manager = Arc::new(NodeManager::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
-        let workload_manager = Arc::new(WorkloadManager::new(
-            connection_manager.pool().clone(),
-            connection_manager.pool().clone(),
-        ));
         let cleanup_service = Arc::new(CleanupService::new(connection_manager.pool().clone()));
+        let dns_manager = Arc::new(DnsEntryManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let storage_monitor = Arc::new(StorageMonitor::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
         let image_store = Arc::new(ImageStore::new(
             connection_manager.pool().clone(),
             connection_manager.pool().clone(),
@@ -147,6 +133,8 @@ impl SyncEngine {
             volume_manager,
             monitor_service,
             cleanup_service,
+            dns_manager,
+            storage_monitor,
             image_store,
             icc_connection_manager,
             master_container_manager,
@@ -204,6 +192,42 @@ impl SyncEngine {
         let monitor_service = Arc::new(ProcessMonitorService::new(
             connection_manager.pool().clone(),
         ));
+        let dns_manager = Arc::new(DnsEntryManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let storage_monitor = Arc::new(StorageMonitor::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let image_store = Arc::new(ImageStore::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let icc_connection_manager = Arc::new(IccConnectionManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let master_container_manager = Arc::new(MasterContainerManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let terminal_session_manager = Arc::new(TerminalSessionManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let cluster_manager = Arc::new(ClusterManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let node_manager = Arc::new(NodeManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let workload_manager = Arc::new(WorkloadManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
 
         // Create CleanupService with ICC integration if available
         let cleanup_service = if let Some(ref icc_manager) = icc_network_manager {
@@ -226,6 +250,8 @@ impl SyncEngine {
             volume_manager,
             monitor_service,
             cleanup_service,
+            dns_manager,
+            storage_monitor,
             image_store,
             icc_connection_manager,
             master_container_manager,
@@ -268,6 +294,14 @@ impl SyncEngine {
             connection_manager.pool().clone(),
         ));
         let cleanup_service = Arc::new(CleanupService::new(connection_manager.pool().clone()));
+        let dns_manager = Arc::new(DnsEntryManager::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
+        let storage_monitor = Arc::new(StorageMonitor::new(
+            connection_manager.pool().clone(),
+            connection_manager.pool().clone(),
+        ));
         let image_store = Arc::new(ImageStore::new(
             connection_manager.pool().clone(),
             connection_manager.pool().clone(),
@@ -307,6 +341,8 @@ impl SyncEngine {
             volume_manager,
             monitor_service,
             cleanup_service,
+            dns_manager,
+            storage_monitor,
             image_store,
             icc_connection_manager,
             master_container_manager,
@@ -900,6 +936,56 @@ impl SyncEngine {
         use crate::sync::metrics::MetricsStore;
         let store = MetricsStore::new(self.connection_manager.pool().clone());
         store.cleanup_old_metrics(retention_days).await
+    }
+
+    // === DNS & Storage Management ===
+
+    pub async fn create_dns_entry(
+        &self,
+        container_id: &str,
+        container_name: &str,
+        ip_address: &str,
+        tenant_id: &str,
+    ) -> SyncResult<DnsEntry> {
+        self.dns_manager
+            .create_entry(container_id, container_name, ip_address, tenant_id)
+            .await
+    }
+
+    pub async fn delete_dns_entry_by_container(&self, container_id: &str) -> SyncResult<()> {
+        self.dns_manager.delete_by_container(container_id).await
+    }
+
+    pub async fn list_dns_entries_for_tenant(&self, tenant_id: &str) -> SyncResult<Vec<DnsEntry>> {
+        self.dns_manager.list_by_tenant(tenant_id).await
+    }
+
+    pub async fn reconcile_storage(&self) -> SyncResult<()> {
+        StorageMonitor::reconcile_all_tenants(
+            self.connection_manager.pool(),
+            self.connection_manager.pool(),
+        )
+        .await
+    }
+
+    pub async fn measure_volume_storage(
+        &self,
+        volume_name: &str,
+        tenant_id: &str,
+    ) -> SyncResult<f64> {
+        self.storage_monitor
+            .measure_volume(volume_name, tenant_id)
+            .await
+    }
+
+    pub async fn measure_container_storage(
+        &self,
+        container_id: &str,
+        tenant_id: &str,
+    ) -> SyncResult<f64> {
+        self.storage_monitor
+            .measure_container_rootfs(container_id, tenant_id)
+            .await
     }
 
     // === Image Management ===
