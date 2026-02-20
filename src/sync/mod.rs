@@ -9,7 +9,16 @@ pub mod error;
 pub mod volumes;
 pub mod metrics;
 pub mod events;
+pub mod icc_connections;
+pub mod images;
+pub mod ipam;
+pub mod master_containers;
+pub mod migrations;
+pub mod nodes;
+pub mod retry;
+pub mod terminal_sessions;
+pub mod workloads;
 
 pub use engine::SyncEngine;
 pub use containers::ContainerState;
-pub use volumes::MountType; 
+pub use volumes::MountType;

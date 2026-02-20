@@ -7,6 +7,8 @@ pub mod system;
 pub mod manager;
 pub mod resource;
 pub mod metrics;
+pub mod pty;
+pub mod seccomp;
 
 // Re-export commonly used types
 pub use runtime::{ContainerConfig, MountConfig, MountType};
