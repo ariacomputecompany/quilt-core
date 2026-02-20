@@ -25,6 +25,10 @@ path = "src/main.rs"
 name = "cli"
 path = "src/cli/main.rs"
 
+[[bin]]
+name = "minit"
+path = "src/minit/main.rs"
+
 [dependencies]
 tonic = "0.8"
 prost = "0.11"
