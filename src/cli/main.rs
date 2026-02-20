@@ -28,6 +28,7 @@ use quilt::{
     GetContainerLogsRequest, GetContainerLogsResponse,
     StopContainerRequest, StopContainerResponse,
     RemoveContainerRequest, RemoveContainerResponse,
+    ListContainersRequest, ListContainersResponse,
     ExecContainerRequest, ExecContainerResponse,
     StartContainerRequest, StartContainerResponse,
     KillContainerRequest, KillContainerResponse,
@@ -154,6 +155,12 @@ enum Commands {
         by_name: bool,
         #[clap(long, short = 'f', help = "Force removal even if running")]
         force: bool,
+    },
+
+    /// List containers
+    List {
+        #[clap(long, help = "Filter by state: created, starting, running, exited, error")]
+        state: Option<String>,
     },
     
     /// Create a production-ready persistent container
@@ -905,6 +912,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(e) => {
                     eprintln!("❌ Error removing container: {}", e.message());
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::List { state } => {
+            let request = tonic::Request::new(ListContainersRequest {
+                state_filter: state.filter(|s| !s.trim().is_empty()),
+            });
+
+            match client.list_containers(request).await {
+                Ok(response) => {
+                    let res: ListContainersResponse = response.into_inner();
+                    if res.containers.is_empty() {
+                        println!("📦 No containers found");
+                    } else {
+                        println!("📦 Containers:");
+                        for c in res.containers {
+                            let status = match c.status {
+                                0 => "PENDING",
+                                1 => "RUNNING",
+                                2 => "EXITED",
+                                3 => "FAILED",
+                                _ => "UNKNOWN",
+                            };
+                            let name = if c.name.is_empty() { "-" } else { &c.name };
+                            let ip = if c.ip_address.is_empty() { "-" } else { &c.ip_address };
+                            println!(
+                                "  {}  name={}  status={}  pid={}  ip={}",
+                                c.container_id, name, status, c.pid, ip
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Error listing containers: {}", e.message());
                     std::process::exit(1);
                 }
             }
@@ -2024,6 +2067,20 @@ mod tests {
                 assert!(by_name);
             }
             _ => panic!("Expected Logs command"),
+        }
+    }
+
+    #[test]
+    fn test_list_with_state_filter() {
+        let args = vec!["cli", "list", "--state", "running"];
+        
+        let cli = Cli::parse_from(args);
+        
+        match cli.command {
+            Commands::List { state } => {
+                assert_eq!(state, Some("running".to_string()));
+            }
+            _ => panic!("Expected List command"),
         }
     }
     

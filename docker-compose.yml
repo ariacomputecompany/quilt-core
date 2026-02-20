@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  quilt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: quilt:latest
+    container_name: quilt-server
+    restart: unless-stopped
+
+    # Required for container operations (namespaces, cgroups)
+    privileged: true
+
+    # Network mode for container networking
+    network_mode: host
+
+    # Environment variables
+    environment:
+      - RUST_LOG=info,quilt=info
+      - HTTP_ADDR=0.0.0.0:8080
+      - GRPC_ADDR=0.0.0.0:50051
+      - AUTH_MODE=${AUTH_MODE:-jwt}
+      - API_KEY_ENCRYPTION_KEY=${API_KEY_ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_EXPIRY_SECS=${JWT_ACCESS_EXPIRY_SECS:-3600}
+      - JWT_REFRESH_EXPIRY_SECS=${JWT_REFRESH_EXPIRY_SECS:-604800}
+
+    # Persistent storage - bind mount to host filesystem
+    volumes:
+      - /var/lib/quilt:/var/lib/quilt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+
+    # Port mapping (not needed with host network, but documented)
+    # ports:
+    #   - "8080:8080"
+    #   - "50051:50051"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

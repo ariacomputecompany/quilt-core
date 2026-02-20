@@ -32,6 +32,7 @@ use quilt::{
     GetContainerLogsRequest, GetContainerLogsResponse,
     StopContainerRequest, StopContainerResponse,
     RemoveContainerRequest, RemoveContainerResponse,
+    ListContainersRequest, ListContainersResponse,
     ExecContainerRequest, ExecContainerResponse,
     StartContainerRequest, StartContainerResponse,
     KillContainerRequest, KillContainerResponse,
@@ -671,6 +672,62 @@ impl QuiltService for QuiltServiceImpl {
                 }))
             }
         }
+    }
+
+    async fn list_containers(
+        &self,
+        request: Request<ListContainersRequest>,
+    ) -> Result<Response<ListContainersResponse>, Status> {
+        let req = request.into_inner();
+
+        let state_filter = match req.state_filter {
+            Some(filter) if !filter.trim().is_empty() => {
+                let normalized = filter.trim().to_lowercase();
+                Some(ContainerState::from_string(&normalized).map_err(|_| {
+                    Status::invalid_argument(format!(
+                        "Invalid state filter '{}'. Use one of: created, starting, running, exited, error",
+                        filter
+                    ))
+                })?)
+            }
+            _ => None,
+        };
+
+        let containers = self
+            .sync_engine
+            .list_containers(state_filter)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to list containers: {}", e)))?;
+
+        let proto_containers = containers
+            .into_iter()
+            .map(|container| {
+                let status = match container.state {
+                    ContainerState::Created | ContainerState::Starting => ContainerStatus::Pending,
+                    ContainerState::Running => ContainerStatus::Running,
+                    ContainerState::Exited => ContainerStatus::Exited,
+                    ContainerState::Error => ContainerStatus::Failed,
+                };
+
+                quilt::ContainerInfo {
+                    container_id: container.id,
+                    name: container.name.unwrap_or_default(),
+                    status: status as i32,
+                    pid: container.pid.unwrap_or(0) as i32,
+                    exit_code: container.exit_code.unwrap_or(0) as i32,
+                    created_at: container.created_at as u64,
+                    started_at: container.started_at.unwrap_or(0) as u64,
+                    exited_at: container.exited_at.unwrap_or(0) as u64,
+                    rootfs_path: container.rootfs_path.unwrap_or_default(),
+                    ip_address: container.ip_address.unwrap_or_default(),
+                    labels: HashMap::new(),
+                }
+            })
+            .collect();
+
+        Ok(Response::new(ListContainersResponse {
+            containers: proto_containers,
+        }))
     }
 
     async fn exec_container(
@@ -2104,4 +2161,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

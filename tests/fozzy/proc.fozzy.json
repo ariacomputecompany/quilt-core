@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "proc-mock",
+  "steps": [
+    {
+      "type": "proc_when",
+      "cmd": "git",
+      "args": ["rev-parse", "--short", "HEAD"],
+      "exit_code": 0,
+      "stdout": "abc123",
+      "times": 1
+    },
+    {
+      "type": "proc_spawn",
+      "cmd": "git",
+      "args": ["rev-parse", "--short", "HEAD"],
+      "expect_exit": 0,
+      "expect_stdout": "abc123",
+      "save_stdout_as": "git_sha"
+    },
+    { "type": "get_kv_assert", "key": "git_sha", "equals": "abc123" }
+  ]
+}
+

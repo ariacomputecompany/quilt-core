@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "name": "src-fuzz-explore-host-memory-fail-prod",
+  "steps": [
+    { "type": "trace_event", "name": "src-prod-hotspot-cover", "fields": { "component": "src" } },
+    { "type": "set_kv", "key": "mode", "value": "fuzz explore host memory fail" },
+    {
+      "type": "http_when",
+      "method": "GET",
+      "path": "/src-health",
+      "status": 200,
+      "json": { "ok": true, "component": "src" },
+      "times": 1
+    },
+    {
+      "type": "http_request",
+      "method": "GET",
+      "path": "/src-health",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "component": "src" }
+    },
+    { "type": "proc_when", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "exit_code": 0, "stdout": "abc123", "times": 1 },
+    { "type": "proc_spawn", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "expect_exit": 0, "expect_stdout": "abc123" },
+    {
+      "type": "assert_throws",
+      "steps": [
+        { "type": "get_kv_assert", "key": "missing-key", "equals": "expected-to-fail" }
+      ]
+    },
+    { "type": "assert_ok", "value": true }
+  ]
+}

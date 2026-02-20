@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "net-sim",
+  "steps": [
+    { "type": "net_send", "from": "n1", "to": "n2", "payload": "hello" },
+    { "type": "net_deliver_one" },
+    { "type": "net_recv_assert", "node": "n2", "from": "n1", "payload": "hello" },
+
+    { "type": "net_partition", "a": "n1", "b": "n2" },
+    { "type": "net_send", "from": "n1", "to": "n2", "payload": "blocked" },
+    {
+      "type": "assert_throws",
+      "steps": [
+        { "type": "net_deliver_one" }
+      ]
+    },
+    { "type": "net_heal", "a": "n1", "b": "n2" },
+    { "type": "net_deliver_one" },
+    { "type": "net_recv_assert", "node": "n2", "from": "n1", "payload": "blocked" }
+  ]
+}
+

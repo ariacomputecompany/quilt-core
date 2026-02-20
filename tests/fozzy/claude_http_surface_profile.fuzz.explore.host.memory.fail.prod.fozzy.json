@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "name": "claude-http-surface-profile-fuzz-explore-host-memory-fail-prod",
+  "steps": [
+    {
+      "type": "trace_event",
+      "name": ".claude settings.local json and http_surface_profile.json coverage anchor",
+      "fields": {
+        "component_a": ".claude",
+        "component_b": "http_surface_profile.json",
+        "hint_a": "settings_local",
+        "hint_b": "http_surface_profile"
+      }
+    },
+    { "type": "set_kv", "key": "meta_mode", "value": "fuzz explore host memory fail" },
+    {
+      "type": "http_when",
+      "method": "GET",
+      "path": "/meta-health",
+      "status": 200,
+      "json": { "ok": true, "kind": "meta" },
+      "times": 1
+    },
+    {
+      "type": "http_request",
+      "method": "GET",
+      "path": "/meta-health",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "kind": "meta" }
+    },
+    { "type": "proc_when", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "exit_code": 0, "stdout": "abc123", "times": 1 },
+    { "type": "proc_spawn", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "expect_exit": 0, "expect_stdout": "abc123" },
+    {
+      "type": "assert_throws",
+      "steps": [
+        { "type": "get_kv_assert", "key": "meta-missing", "equals": "expected-to-fail" }
+      ]
+    },
+    { "type": "assert_ok", "value": true }
+  ]
+}

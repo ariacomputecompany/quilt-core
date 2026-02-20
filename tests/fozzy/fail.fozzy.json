@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "fail",
+  "steps": [
+    { "type": "trace_event", "name": "start" },
+    { "type": "assert_eq_int", "a": 1, "b": 2, "msg": "expected failure" }
+  ]
+}
+

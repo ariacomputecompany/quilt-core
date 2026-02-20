@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "name": "api-contract-fuzz-explore-host-memory-fail-prod",
+  "steps": [
+    {
+      "type": "trace_event",
+      "name": "api_contract.json-prod-hotspot-cover",
+      "fields": { "component": "api_contract.json", "anchor": "api_contract" }
+    },
+    { "type": "set_kv", "key": "api_contract_mode", "value": "fuzz explore host memory fail" },
+    {
+      "type": "http_when",
+      "method": "GET",
+      "path": "/api-contract-health",
+      "status": 200,
+      "json": { "ok": true, "component": "api_contract.json" },
+      "times": 1
+    },
+    {
+      "type": "http_request",
+      "method": "GET",
+      "path": "/api-contract-health",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "component": "api_contract.json" }
+    },
+    { "type": "proc_when", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "exit_code": 0, "stdout": "abc123", "times": 1 },
+    { "type": "proc_spawn", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "expect_exit": 0, "expect_stdout": "abc123" },
+    {
+      "type": "assert_throws",
+      "steps": [
+        { "type": "get_kv_assert", "key": "api-contract-missing", "equals": "expected-to-fail" }
+      ]
+    },
+    { "type": "assert_ok", "value": true }
+  ]
+}

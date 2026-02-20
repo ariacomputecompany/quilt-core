@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "name": "timeout-det",
+  "steps": [
+    { "type": "sleep", "duration": "10s" },
+    { "type": "assert_ok", "value": true }
+  ]
+}

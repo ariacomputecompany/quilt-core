@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "kv-explore",
+  "distributed": {
+    "node_count": 3,
+    "steps": [
+      { "type": "client_put", "node": "n0", "key": "x", "value": "1" },
+      { "type": "partition", "a": "n0", "b": "n1" },
+      { "type": "client_put", "node": "n0", "key": "x", "value": "2" },
+      { "type": "heal", "a": "n0", "b": "n1" }
+    ],
+    "invariants": [
+      { "type": "kv_all_equal", "key": "x" }
+    ]
+  }
+}
+

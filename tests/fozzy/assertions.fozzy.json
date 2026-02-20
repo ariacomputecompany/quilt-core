@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "name": "assertions-surface",
+  "steps": [
+    { "type": "assert_ok", "value": true },
+    { "type": "assert_ne_int", "a": 1, "b": 2 },
+    { "type": "assert_ne_str", "a": "a", "b": "b" },
+    {
+      "type": "assert_throws",
+      "steps": [
+        { "type": "panic", "message": "boom" }
+      ]
+    },
+    {
+      "type": "assert_rejects",
+      "steps": [
+        { "type": "fail", "message": "reject" }
+      ]
+    },
+    { "type": "set_kv", "key": "ready", "value": "yes" },
+    {
+      "type": "assert_eventually_kv",
+      "key": "ready",
+      "equals": "yes",
+      "within": "100ms",
+      "poll": "10ms"
+    },
+    {
+      "type": "assert_never_kv",
+      "key": "ready",
+      "equals": "no",
+      "within": "50ms",
+      "poll": "10ms"
+    }
+  ]
+}
+

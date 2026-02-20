@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "name": "scripts-fuzz-explore-host-memory-fail-prod",
+  "steps": [
+    { "type": "trace_event", "name": "scripts-prod-hotspot-cover", "fields": { "component": "scripts" } },
+    { "type": "set_kv", "key": "scripts_mode", "value": "fuzz explore host memory fail" },
+    {
+      "type": "http_when",
+      "method": "GET",
+      "path": "/scripts-health",
+      "status": 200,
+      "json": { "ok": true, "component": "scripts" },
+      "times": 1
+    },
+    {
+      "type": "http_request",
+      "method": "GET",
+      "path": "/scripts-health",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "component": "scripts" }
+    },
+    { "type": "proc_when", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "exit_code": 0, "stdout": "abc123", "times": 1 },
+    { "type": "proc_spawn", "cmd": "git", "args": ["rev-parse", "--short", "HEAD"], "expect_exit": 0, "expect_stdout": "abc123" },
+    {
+      "type": "assert_throws",
+      "steps": [
+        { "type": "get_kv_assert", "key": "scripts-missing", "equals": "expected-to-fail" }
+      ]
+    },
+    { "type": "assert_ok", "value": true }
+  ]
+}
