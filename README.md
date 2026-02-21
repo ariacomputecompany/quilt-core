@@ -1,12 +1,7 @@
 # Quilt OSS
 
-Open-source Quilt runtime for self-hosting on Linux.
+`quilt-core` is the open-source runtime: container lifecycle, networking, oci image workflow, sync/state engine, and local operational tooling.
 
-## What This Repo Is
-
-`quilt-core` is the open-source runtime: container lifecycle, networking, image workflow, sync/state engine, and local operational tooling.
-
-This repo is intended for local/self-hosted operation, not Quilt Cloud control-plane deployment.
 
 ## Scope
 
@@ -18,12 +13,7 @@ Included in OSS:
 - Image/registry workflows and runtime support modules
 - Volume and metrics paths
 - Fozzy scenarios and verification tooling
-
-Excluded from OSS scope:
-- HTTP API surface and web middleware/routes
-- multi-tenant auth/user/admin/subscription cloud logic
-- serverless function pool/manager logic
-- cloud terminal/session product surface
+- NOTE: For native Kubernetes-like cluster management, use [quiltc](https://github.com/ariacomputecompany/quiltc)
 
 ## Requirements
 
@@ -67,7 +57,7 @@ docker compose up --build
 
 ## Testing
 
-Fozzy is the primary verification path in this repo.
+[Fozzy](https://github.com/ariacomputecompany/fozzy) is the primary verification path in this repo.
 
 Recommended full gate:
 
