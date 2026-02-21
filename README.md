@@ -1,6 +1,6 @@
 # Quilt OSS
 
-`quilt-core` is the open-source runtime: container lifecycle, networking, oci image workflow, sync/state engine, and local operational tooling.
+`quilt-core` is [Quilt](https://quilt.sh)'s open-source runtime: container ops, icc networking, oci image workflow, sync/state engine, and local operational tooling.
 
 
 ## Scope
